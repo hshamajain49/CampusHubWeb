@@ -30,7 +30,8 @@
     "db:reset": "node scripts/db-reset.mjs",
     "db:dump": "node scripts/db-dump.mjs",
     "db:local:stop": "node scripts/local-db.mjs stop",
-    "neon:env": "node scripts/neon-env.mjs"
+    "neon:env": "node scripts/neon-env.mjs",
+    "create-super-admin:prod": "node scripts/create-super-admin-prod.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

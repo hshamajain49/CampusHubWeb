@@ -15,4 +15,9 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           JOBS_URL: ${{ secrets.JOBS_URL }}
-        run: curl -fsS -m 120 -X POST -H "Authorization: Bearer $CRON_SECRET" "$JOBS_URL"
+        # Block scalar: a plain YAML value can't contain ": " (it made this whole file invalid).
+        run: |
+          if [ -z "$JOBS_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "JOBS_URL/CRON_SECRET secrets not set; skipping (this backup scheduler is optional)"; exit 0
+          fi
+          curl -fsS -m 120 -X POST -H "Authorization: Bearer $CRON_SECRET" "$JOBS_URL"

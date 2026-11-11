@@ -117,6 +117,7 @@ jobs:
           sed 's/^ *//' -i backend/.env
           cp e2e/.env.example e2e/.env
           sed -i "s/^E2E_CRON_SECRET=.*/E2E_CRON_SECRET=$CRON/" e2e/.env
+      - run: npm run build -w @campushub/shared # seed-dev imports @campushub/shared, which resolves to shared/dist
       - run: npm run db:reset
       - run: npm run seed:dev -w @campushub/backend
       - run: npm run build

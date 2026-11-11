@@ -1,0 +1,20 @@
+# gitleaks configuration (used by the secrets-scan job in .github/workflows/ci.yml; auto-loaded from the repo root).
+# Keeps every default rule and allowlists only known non-secret VALUES, never whole files, so a real key pasted into
+# any of these files is still reported.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented demo/test values and placeholders, not credentials"
+regexTarget = "secret"
+regexes = [
+  # Seeded demo accounts and the integration-test password (README, seed-dev.ts, tests, e2e/.env.example)
+  '''^(Admin|Student|Faculty|Testing)12345$''',
+  # Fixed secrets for the throwaway local test database (backend/.env.test)
+  '''^test-(secret|cron)-[a-z0-9-]+$''',
+  # Placeholders in *.env.example
+  '''^replace-with-[a-z0-9-]+$''',
+  # Code that reads a value from the environment, and env-var names in render.yaml
+  '''^process\.env\.[A-Z0-9_]+$''',
+  '''^[A-Z][A-Z0-9_]{2,}$''',
+]

@@ -82,7 +82,8 @@ Stop the embedded clusters with `npm run db:local:stop`.
 | `npm run neon:env` | Point `backend/.env` at the Neon branch in `.env.local` (`-- --off` reverts to the local cluster) |
 | `npm run db:reset` | Drop, recreate, migrate and seed the **local** dev database (refuses remote hosts) |
 | `npm run db:dump` | `pg_dump` of the configured database into `backups/` |
-| `npm run create-super-admin -w @campushub/backend` | Provision a Super Admin account from the command line |
+| `npm run create-super-admin -w @campushub/backend` | Provision a Super Admin account from the command line (on the database in `backend/.env`) |
+| `npm run create-super-admin:prod -- --email … --name "…"` | The same on the Neon **production** branch, using `.env.production.local` |
 
 ## Project layout
 
@@ -121,6 +122,11 @@ action bars respect safe areas, and inputs are 16 px so iOS doesn't zoom.
   storage values (`AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) come from
   `neon env pull --branch production`. Migrate with
   `DATABASE_URL=<direct url> npx dbmate --migrations-dir database/migrations --no-dump-schema up`.
+- **First Super Admin**: `neon env pull --branch production --file .env.production.local`, then
+  `npm run create-super-admin:prod -- --email you@college.edu --name "Your Name"`. It prints a one-time password
+  (changed at first sign-in). Don't prefix the plain `create-super-admin` with `DATABASE_URL=`: `backend/.env` wins
+  over shell variables, so it would write to the dev branch. The app itself only creates students and faculty, so
+  run this again for each extra Super Admin (an existing account's email is promoted instead).
 - **Jobs**: cron-job.org calls `POST /internal/jobs/run` with `Authorization: Bearer <CRON_SECRET>` every 30 minutes
   by day and hourly at night; `GET /health` every 14 minutes during campus hours keeps the free instance awake.
 - **CI** (`.github/workflows/ci.yml`): lint/typecheck → unit → db → integration → e2e, a secrets scan of the built

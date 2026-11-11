@@ -6,9 +6,11 @@ import { z } from 'zod';
 /**
  * Local runs read backend/.env (tests: .env.test). File values win over inherited shell values so a
  * globally exported NODE_ENV=production can't leak into development. Render has no .env file.
+ * ENV_FILE=none reads no file at all (scripts/create-super-admin-prod.mjs passes production values this way).
  */
 function loadEnvFile() {
   const name = process.env.ENV_FILE ?? (process.env.VITEST ? '.env.test' : '.env');
+  if (name === 'none') return;
   const candidates = [path.resolve(process.cwd(), name), path.resolve(process.cwd(), 'backend', name)];
   const file = candidates.find((f) => fs.existsSync(f));
   if (!file) return;

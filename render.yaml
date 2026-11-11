@@ -8,7 +8,7 @@ services:
     buildCommand: npm ci --include=dev && npm run build -w @campushub/shared && npm run build -w @campushub/backend
     startCommand: npm run start -w @campushub/backend
     healthCheckPath: /health # never touches the database (§10.13)
-    autoDeploy: true
+    autoDeploy: false # CI deploys via the deploy hook after tests pass and migrations run
     envVars:
       - key: NODE_ENV
         value: production
