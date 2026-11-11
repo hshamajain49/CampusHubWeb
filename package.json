@@ -1,0 +1,52 @@
+{
+  "name": "campushub-venues",
+  "private": true,
+  "version": "1.1.0",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend",
+    "e2e"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "local": "node scripts/local-db.mjs && npm run db:migrate && npm run db:migrate:test && npm run seed:if-empty -w @campushub/backend && npm run dev",
+    "dev": "npm run build -w @campushub/shared && concurrently -n shared,api,web -c yellow,green,cyan \"npm:dev -w @campushub/shared\" \"npm:dev -w @campushub/backend\" \"npm:dev -w @campushub/frontend\"",
+    "build": "npm run build -w @campushub/shared && npm run build -w @campushub/backend && npm run build -w @campushub/frontend",
+    "lint": "eslint .",
+    "typecheck": "tsc -b shared && tsc -p backend --noEmit && tsc -p frontend --noEmit",
+    "test": "npm run test -w @campushub/shared && npm run test -w @campushub/backend && npm run test -w @campushub/frontend",
+    "test:db": "npm run test:db -w @campushub/backend",
+    "test:integration": "npm run test:integration -w @campushub/backend",
+    "e2e": "npm run test -w @campushub/e2e",
+    "db:local": "node scripts/local-db.mjs",
+    "db:up": "docker compose up -d db db-test",
+    "db:down": "docker compose down",
+    "db:migrate": "dbmate --migrations-dir database/migrations --no-dump-schema --env-file backend/.env up",
+    "db:migrate:test": "dbmate --migrations-dir database/migrations --no-dump-schema --env TEST_DATABASE_URL --env-file backend/.env.test up",
+    "db:reset": "node scripts/db-reset.mjs",
+    "db:dump": "node scripts/db-dump.mjs",
+    "db:local:stop": "node scripts/local-db.mjs stop",
+    "neon:env": "node scripts/neon-env.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@neon/config": "^1.13.0",
+    "concurrently": "^9.2.1",
+    "dbmate": "^2.37.0",
+    "embedded-postgres": "17.11.0-beta.19",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^16.5.0",
+    "pg": "^8.16.3",
+    "prettier": "^3.6.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.46.4"
+  },
+  "overrides": {
+    "vite": "^7.3.7"
+  }
+}

@@ -1,0 +1,13 @@
+import { chromium } from '@playwright/test';
+const b = await chromium.launch();
+const p = await (await b.newContext()).newPage();
+p.on('console', (m) => console.log('console:', m.type(), m.text().slice(0, 600)));
+p.on('requestfailed', (r) => console.log('FAILED', r.method(), r.url(), r.failure()?.errorText));
+p.on('response', (r) => r.url().includes('/api/') && console.log('resp', r.status(), r.request().method(), r.url()));
+await p.goto('http://localhost:5173/login', { waitUntil: 'networkidle' });
+await p.getByLabel('Email').fill('student@demo.edu');
+await p.getByLabel('Password', { exact: true }).fill('Student12345');
+await p.getByRole('button', { name: 'Sign in' }).click();
+await p.waitForTimeout(3000);
+console.log('url', p.url());
+await b.close();

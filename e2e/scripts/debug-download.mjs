@@ -1,0 +1,17 @@
+import { chromium } from '@playwright/test';
+const res = await fetch('http://localhost:4000/api/auth/sign-in/email', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' }, body: JSON.stringify({ email: 'student@demo.edu', password: 'Student12345' }) });
+const tok = res.headers.get('set-auth-token');
+const list = await fetch('http://localhost:4000/api/v1/bookings?scope=upcoming&status=approved', { headers: { authorization: `Bearer ${tok}` } }).then((r) => r.json());
+const id = list.data[0].id;
+const b = await chromium.launch();
+const ctx = await b.newContext({ acceptDownloads: true });
+await ctx.addInitScript((t) => localStorage.setItem('campushub.session', t), tok);
+const p = await ctx.newPage();
+p.on('console', (m) => m.type() === 'error' && console.log('console:', m.text().slice(0, 300)));
+p.on('response', (r) => r.url().includes('confirmation') && console.log('resp', r.status(), r.headers()['content-type'], r.headers()['content-disposition']));
+await p.goto(`http://localhost:5173/bookings/${id}`, { waitUntil: 'networkidle' });
+const t0 = Date.now();
+const dl = p.waitForEvent('download', { timeout: 15000 }).then((d) => console.log('download', d.suggestedFilename(), Date.now() - t0, 'ms')).catch((e) => console.log('no download:', e.message.split('\n')[0]));
+await p.getByRole('button', { name: 'Download confirmation' }).first().click();
+await dl;
+await b.close();

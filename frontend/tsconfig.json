@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@campushub/shared": ["../shared/src/index.ts"],
+      "@campushub/shared/time": ["../shared/src/time.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

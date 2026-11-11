@@ -1,0 +1,18 @@
+# Optional backup trigger for the scheduled jobs (§28.8). cron-job.org is the primary scheduler;
+# GitHub may delay or skip scheduled runs and disables them after 60 days without repository activity.
+name: Jobs backup
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /internal/jobs/run
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          JOBS_URL: ${{ secrets.JOBS_URL }}
+        run: curl -fsS -m 120 -X POST -H "Authorization: Bearer $CRON_SECRET" "$JOBS_URL"

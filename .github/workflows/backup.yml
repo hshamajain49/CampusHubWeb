@@ -1,0 +1,33 @@
+# Weekly encrypted pg_dump of production (§28.8). Never uploads the unencrypted file.
+# PROD_DATABASE_URL must be the DIRECT Neon endpoint (no -pooler); pg_dump needs a session connection.
+name: Backup
+
+on:
+  schedule:
+    - cron: '17 20 * * 0' # Sunday night UTC
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL 18 client (pg_dump must be >= the Neon server version)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update && sudo apt-get install -y postgresql-client-18
+      - name: Dump and encrypt
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          /usr/lib/postgresql/18/bin/pg_dump --format=custom "$PROD_DATABASE_URL" -f campushub.dump
+          gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$BACKUP_PASSPHRASE" campushub.dump
+          rm -f campushub.dump
+      - uses: actions/upload-artifact@v4
+        with:
+          name: campushub-${{ github.run_id }}
+          path: campushub.dump.gpg
+          retention-days: 90

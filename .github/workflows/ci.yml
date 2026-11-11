@@ -1,0 +1,176 @@
+# §28.8 CI: lint/typecheck → unit → db → integration → e2e, plus a secrets scan and a gated deploy.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  # The backend reads backend/.env.test for test runs; this URL matches the service container below.
+  TEST_DATABASE_URL: postgresql://campushub:campushub@localhost:5433/campushub_test?sslmode=disable
+
+jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
+      - run: npm ci --include=dev
+      - run: npm run build -w @campushub/shared
+      - run: npm run lint
+      - run: npm run typecheck
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
+      - run: npm ci --include=dev
+      - run: npm run build -w @campushub/shared
+      - run: npm test
+
+  db:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18 # matches Neon production
+        env: { POSTGRES_USER: campushub, POSTGRES_PASSWORD: campushub, POSTGRES_DB: campushub_test }
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U campushub -d campushub_test" --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
+      - run: npm ci --include=dev
+      - run: npm run db:migrate:test
+      - run: npm run test:db
+
+  integration:
+    needs: db
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18 # matches Neon production
+        env: { POSTGRES_USER: campushub, POSTGRES_PASSWORD: campushub, POSTGRES_DB: campushub_test }
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U campushub -d campushub_test" --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
+      - run: npm ci --include=dev
+      - run: npm run build -w @campushub/shared
+      - run: npm run db:migrate:test
+      - run: npm run test:integration
+
+  e2e:
+    needs: integration
+    if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18 # matches Neon production
+        env: { POSTGRES_USER: campushub, POSTGRES_PASSWORD: campushub, POSTGRES_DB: campushub }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U campushub -d campushub" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      CI: 'true'
+      DATABASE_URL: postgresql://campushub:campushub@localhost:5432/campushub?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
+      - run: npm ci --include=dev
+      - name: Write throwaway env files
+        run: |
+          secret() { node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"; }
+          CRON=$(secret)
+          cat > backend/.env <<EOF
+          NODE_ENV=development
+          PORT=4000
+          LOG_LEVEL=warn
+          FRONTEND_URL=http://localhost:5173
+          CORS_ORIGINS=http://localhost:5173
+          DATABASE_URL=$DATABASE_URL
+          DATABASE_SSL=false
+          BETTER_AUTH_SECRET=$(secret)
+          BETTER_AUTH_URL=http://localhost:4000
+          EMAIL_TRANSPORT=file
+          EMAIL_FROM_NAME=CampusHub Venue Booking
+          EMAIL_OUTBOX_DIR=.tmp/outbox
+          VAPID_SUBJECT=mailto:ci@example.com
+          IMAGE_STORE=fake
+          CRON_SECRET=$CRON
+          EOF
+          sed 's/^ *//' -i backend/.env
+          cp e2e/.env.example e2e/.env
+          sed -i "s/^E2E_CRON_SECRET=.*/E2E_CRON_SECRET=$CRON/" e2e/.env
+      - run: npm run db:reset
+      - run: npm run seed:dev -w @campushub/backend
+      - run: npm run build
+        env: { VITE_API_ORIGIN: 'http://localhost:4000' }
+      - name: Start API and web
+        run: |
+          (cd backend && NODE_ENV=development node dist/server.js > ../api.log 2>&1 &)
+          (cd frontend && npx vite preview --port 5173 --strictPort > ../web.log 2>&1 &)
+          npx -y wait-on -t 60000 http://localhost:4000/health http://localhost:5173
+      - run: npx playwright install --with-deps chromium webkit
+        working-directory: e2e
+      - run: npx playwright test
+        working-directory: e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            api.log
+            web.log
+          retention-days: 14
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
+      - run: npm ci --include=dev
+      - run: npm run build -w @campushub/shared && npm run build -w @campushub/frontend
+        env: { VITE_API_ORIGIN: 'https://api.example.invalid' }
+      - name: Scan the built bundle for secrets
+        run: |
+          if grep -rEn "postgres(ql)?://|cloudinary://|xkeysib-|BETTER_AUTH_SECRET|CRON_SECRET" frontend/dist; then
+            echo "::error::Secret-like strings found in frontend/dist"; exit 1
+          fi
+      - uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
+
+  deploy:
+    needs: [lint-typecheck, unit, integration, secrets-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production # configure "Required reviewers" for manual approval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
+      - run: npm ci --include=dev
+      - name: Migrate production (forward-only)
+        run: npx dbmate --migrations-dir database/migrations --no-dump-schema up
+        env: { DATABASE_URL: '${{ secrets.PROD_DATABASE_URL }}' }
+      - name: Deploy the API on Render
+        run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+        env: { RENDER_DEPLOY_HOOK_URL: '${{ secrets.RENDER_DEPLOY_HOOK_URL }}' }

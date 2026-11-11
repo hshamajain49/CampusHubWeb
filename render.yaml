@@ -1,0 +1,66 @@
+# Render blueprint for the API (§30.3). Secrets use sync: false, so Render prompts for them; nothing secret is committed.
+services:
+  - type: web
+    name: campushub-api
+    runtime: node
+    plan: free
+    region: singapore # same region as Neon
+    buildCommand: npm ci --include=dev && npm run build -w @campushub/shared && npm run build -w @campushub/backend
+    startCommand: npm run start -w @campushub/backend
+    healthCheckPath: /health # never touches the database (§10.13)
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: '22'
+      - key: LOG_LEVEL
+        value: info
+      - key: TRUST_PROXY
+        value: '1'
+      - key: DATABASE_SSL
+        value: 'true'
+      - key: DATABASE_POOL_MAX
+        value: '5'
+      - key: EMAIL_TRANSPORT
+        value: brevo
+      - key: EMAIL_FROM_NAME
+        value: CampusHub Venue Booking
+      - key: IMAGE_STORE
+        value: neon # Neon Object Storage, bucket declared in neon.ts
+      - key: NEON_STORAGE_BUCKET
+        value: venue-photos
+      - key: AWS_REGION
+        value: ap-southeast-1
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: BETTER_AUTH_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: DATABASE_URL # Neon production branch, DIRECT endpoint (no -pooler): neon connection-string production
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+      - key: EMAIL_REPLY_TO
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
+      - key: ABLY_API_KEY
+        sync: false
+      - key: AWS_ENDPOINT_URL_S3 # neon env pull --branch production (object storage values)
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: CRON_SECRET
+        sync: false

@@ -1,0 +1,581 @@
+@import 'tailwindcss';
+
+/* ───────────────────────── Design tokens (§19.2–19.4) ───────────────────────── */
+:root {
+  --primary: #1e3a8a;
+  --primary-hover: #172554;
+  --primary-soft: #e8edfa;
+  --primary-foreground: #ffffff;
+  --secondary: #0d9488;
+  --secondary-text: #0f766e;
+  --secondary-soft: #e1f4f1;
+  --accent: #f59e0b;
+  --background: #f4f6fb;
+  --surface: #ffffff;
+  --surface-muted: #eff2f8;
+  --text: #141b2d;
+  --text-muted: #5e6a82;
+  --text-subtle: #98a2b6;
+  --border: #e4e8f1;
+  --ring: #1e3a8a;
+  --destructive: #dc4a4a;
+  --destructive-text: #b42318;
+  --destructive-soft: #fce8e8;
+  --success: #1f9d63;
+  --success-text: #146c43;
+  --success-soft: #e3f5ec;
+  --warning: #d9a10b;
+  --warning-text: #7a5a00;
+  --warning-soft: #fdf4dc;
+  --orange: #ea8a1e;
+
+  --role-student: #1e3a8a;
+  --role-faculty: #0f766e;
+  --role-admin: #7c3aed;
+
+  --shadow-card: 0 4px 16px rgba(30, 58, 138, 0.05);
+  --shadow-raised: 0 10px 28px rgba(30, 58, 138, 0.1);
+  --radius: 10px;
+  --radius-card: 14px;
+
+  /* Motion (Emil Kowalski's curves) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Slot patterns — the app's visual motif */
+  --slot-booked: rgba(74, 84, 104, 0.85);
+  --slot-hold: repeating-linear-gradient(135deg, #f3d488 0 5px, #fdf4dc 5px 10px);
+  --slot-blocked: repeating-linear-gradient(45deg, rgba(94, 106, 130, 0.38) 0 1.5px, transparent 1.5px 7px),
+    repeating-linear-gradient(-45deg, rgba(94, 106, 130, 0.38) 0 1.5px, transparent 1.5px 7px), #eef0f4;
+  --slot-free: #eef7f5;
+}
+
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-text: var(--secondary-text);
+  --color-secondary-soft: var(--secondary-soft);
+  --color-accent: var(--accent);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-ink: var(--text);
+  --color-muted: var(--text-muted);
+  --color-subtle: var(--text-subtle);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-text: var(--destructive-text);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-success: var(--success);
+  --color-success-text: var(--success-text);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-warning-soft: var(--warning-soft);
+  --color-orange: var(--orange);
+  --color-role-student: var(--role-student);
+  --color-role-faculty: var(--role-faculty);
+  --color-role-admin: var(--role-admin);
+
+  --font-sans: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: Poppins, 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Menlo, Consolas, monospace;
+
+  --radius-sm: 8px;
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-card);
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+
+  --ease-out-strong: var(--ease-out);
+  --ease-in-out-strong: var(--ease-in-out);
+  --ease-drawer: var(--ease-drawer);
+
+  --animate-pop-in: pop-in 180ms var(--ease-out);
+  --animate-pop-out: pop-out 120ms var(--ease-out);
+}
+
+/* ───────────────────────── Base & mobile-native baseline ───────────────────────── */
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    scroll-padding-top: 80px;
+  }
+  body {
+    background: var(--background);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'cv11', 'ss01';
+    min-height: 100dvh;
+  }
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+  ::selection {
+    background: #c9d5f2;
+  }
+  button,
+  a,
+  [role='button'],
+  [role='tab'],
+  label {
+    touch-action: manipulation;
+  }
+  button,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  .chip {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  /* iOS zooms into inputs under 16px; keep 16px on touch, 14px on desktop. */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  @media (pointer: fine) {
+    input,
+    textarea,
+    select {
+      font-size: 14px;
+    }
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  [hidden] {
+    display: none !important;
+  }
+  /* Implicit grid tracks are `auto`, which lets long truncated text widen a stack past the viewport.
+     Default every grid to one shrinkable column; grid-cols-* utilities (later layer) still win. */
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .eyebrow {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    line-height: 14px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid rgb(228 232 241 / 0.8);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+  .safe-bottom {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .slot-booked {
+    background: var(--slot-booked);
+  }
+  .slot-hold {
+    background: var(--slot-hold);
+  }
+  .slot-blocked {
+    background: var(--slot-blocked);
+  }
+}
+
+/* ───────────────────────── Motion ───────────────────────── */
+/* Press feedback and hover lift live outside @layer so Tailwind transition-* utilities can't override them.
+   Transform uses the strong ease-out; colour changes use plain ease (Emil Kowalski's easing rules). */
+.press {
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    opacity 150ms ease;
+}
+.press:active:not(:disabled):not([aria-disabled='true']) {
+  transform: scale(0.97);
+}
+.lift {
+  transition:
+    transform 150ms var(--ease-out),
+    box-shadow 150ms ease;
+}
+.lift.press {
+  transition:
+    transform 160ms var(--ease-out),
+    box-shadow 150ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .lift:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-raised);
+  }
+}
+/* Large surfaces press less than buttons (0.985 vs 0.97). */
+.lift.press:active {
+  transform: scale(0.985);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes sheet-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes sheet-out-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes sheet-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@keyframes sheet-out-left {
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes sheet-in-bottom {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-out-bottom {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes slot-grow {
+  from {
+    transform: scaleX(0.3);
+    opacity: 0;
+  }
+}
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 28;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes ring-out {
+  from {
+    transform: scale(0.85);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes shimmer {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Origin-aware popovers: Radix exposes the trigger-relative origin. Modals stay centred. */
+.popover-surface {
+  transform-origin: var(
+    --radix-popover-content-transform-origin,
+    var(
+      --radix-dropdown-menu-content-transform-origin,
+      var(--radix-select-content-transform-origin, var(--radix-tooltip-content-transform-origin, top))
+    )
+  );
+}
+.popover-surface[data-state='open'] {
+  animation: pop-in 180ms var(--ease-out);
+}
+.popover-surface[data-state='closed'] {
+  animation: pop-out 120ms var(--ease-out);
+}
+.tooltip-surface[data-state='delayed-open'],
+.tooltip-surface[data-state='instant-open'] {
+  animation: pop-in 125ms var(--ease-out);
+}
+.tooltip-surface[data-state='instant-open'] {
+  animation-duration: 0ms;
+}
+.overlay[data-state='open'] {
+  animation: fade-in 200ms var(--ease-out);
+}
+.overlay[data-state='closed'] {
+  animation: fade-out 150ms var(--ease-out);
+}
+.modal-surface {
+  transform-origin: center;
+}
+.modal-surface[data-state='open'] {
+  animation: pop-in 220ms var(--ease-out);
+}
+.modal-surface[data-state='closed'] {
+  animation: pop-out 150ms var(--ease-out);
+}
+.sheet-right[data-state='open'] {
+  animation: sheet-in-right 380ms var(--ease-drawer);
+}
+.sheet-right[data-state='closed'] {
+  animation: sheet-out-right 240ms var(--ease-drawer);
+}
+.sheet-left[data-state='open'] {
+  animation: sheet-in-left 380ms var(--ease-drawer);
+}
+.sheet-left[data-state='closed'] {
+  animation: sheet-out-left 240ms var(--ease-drawer);
+}
+.sheet-bottom[data-state='open'] {
+  animation: sheet-in-bottom 420ms var(--ease-drawer);
+}
+.sheet-bottom[data-state='closed'] {
+  animation: sheet-out-bottom 260ms var(--ease-drawer);
+}
+.page-enter {
+  /* Opacity only: a transform on the route wrapper would become the containing block for the
+     fixed mobile action bars and make them jump when the animation ends. */
+  animation: fade-in 180ms var(--ease-out);
+}
+.rise-in-once {
+  animation: rise-in 200ms var(--ease-out);
+}
+.pop-in-once {
+  animation: pop-in 420ms var(--ease-out) both;
+}
+/* Staggered first render: 30 ms per index, capped at 8 (§19.7). */
+.stagger > * {
+  animation: rise-in 250ms var(--ease-out) backwards;
+}
+.stagger > *:nth-child(2) { animation-delay: 30ms; }
+.stagger > *:nth-child(3) { animation-delay: 60ms; }
+.stagger > *:nth-child(4) { animation-delay: 90ms; }
+.stagger > *:nth-child(5) { animation-delay: 120ms; }
+.stagger > *:nth-child(6) { animation-delay: 150ms; }
+.stagger > *:nth-child(7) { animation-delay: 180ms; }
+.stagger > *:nth-child(n + 8) { animation-delay: 210ms; }
+
+.spinner {
+  animation: spin 650ms linear infinite;
+}
+.skeleton {
+  animation: shimmer 1.6s ease-in-out infinite;
+  background: var(--surface-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Fewer and gentler — keep short cross-fades, drop movement. */
+  .page-enter,
+  .stagger > *,
+  .popover-surface[data-state='open'],
+  .modal-surface[data-state='open'],
+  .tooltip-surface[data-state='delayed-open'] {
+    animation: fade-in 100ms ease both;
+    animation-delay: 0ms !important;
+  }
+  .popover-surface[data-state='closed'],
+  .modal-surface[data-state='closed'],
+  .sheet-right[data-state='closed'],
+  .sheet-left[data-state='closed'],
+  .sheet-bottom[data-state='closed'] {
+    animation: fade-out 100ms ease both;
+  }
+  .sheet-right[data-state='open'],
+  .sheet-left[data-state='open'],
+  .sheet-bottom[data-state='open'] {
+    animation: fade-in 100ms ease both;
+  }
+  .press:active:not(:disabled) {
+    transform: none;
+  }
+  .lift:hover {
+    transform: none !important;
+  }
+  .skeleton {
+    animation: none;
+  }
+  .motion-safe-only {
+    animation: none !important;
+  }
+  .rise-in-once,
+  .pop-in-once {
+    animation: fade-in 120ms ease both !important;
+  }
+}
+
+/* ───────────────────────── FullCalendar (MIT plugins) ───────────────────────── */
+.fc {
+  --fc-border-color: var(--border);
+  --fc-page-bg-color: var(--surface);
+  --fc-neutral-bg-color: var(--surface-muted);
+  --fc-today-bg-color: rgba(232, 237, 250, 0.55);
+  --fc-now-indicator-color: var(--destructive);
+  --fc-event-border-color: transparent;
+  --fc-highlight-color: rgba(13, 148, 136, 0.16);
+  --fc-list-event-hover-bg-color: var(--primary-soft);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+.fc .fc-col-header-cell-cushion,
+.fc .fc-daygrid-day-number {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  padding: 6px 4px;
+}
+.fc .fc-timegrid-slot-label-cushion,
+.fc .fc-timegrid-axis-cushion {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.fc .fc-timegrid-slot {
+  height: 22px;
+}
+.fc .fc-timegrid-slot-minor {
+  border-top-style: dotted;
+}
+.fc .fc-day-past:not(.fc-day-today) .fc-timegrid-col-frame,
+.fc .fc-day-disabled {
+  background: repeating-linear-gradient(135deg, transparent 0 7px, rgba(152, 162, 182, 0.08) 7px 9px);
+}
+.fc .fc-event {
+  border-radius: 8px;
+  padding: 1px 2px;
+  font-size: 12px;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.fc .fc-bg-event {
+  opacity: 1;
+}
+.fc .ev-booked {
+  background: var(--slot-booked) !important;
+  color: #fff;
+}
+.fc .ev-hold {
+  background: var(--slot-hold) !important;
+  color: var(--warning-text);
+}
+.fc .ev-blocked {
+  background: var(--slot-blocked) !important;
+  color: var(--text-muted);
+}
+.fc .ev-mine {
+  background: var(--secondary-soft) !important;
+  border: 1.5px solid var(--secondary) !important;
+  color: var(--secondary-text) !important;
+  cursor: pointer;
+}
+.fc .ev-approved {
+  background: var(--secondary) !important;
+  color: #fff !important;
+}
+.fc .ev-pending {
+  background: var(--slot-hold) !important;
+  color: var(--warning-text) !important;
+}
+.fc .ev-block {
+  background: var(--slot-blocked) !important;
+  color: #334155 !important;
+}
+.fc .fc-bg-event .fc-event-title {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 5px;
+  margin: 0;
+}
+.fc .fc-list-event-title,
+.fc .fc-list-event-time {
+  font-size: 13px;
+}
+.fc .fc-list-day-cushion {
+  background: var(--surface-muted);
+}
+.fc-theme-standard .fc-scrollgrid {
+  border-radius: 12px;
+  overflow: hidden;
+}
+.fc .fc-highlight {
+  border-radius: 6px;
+}

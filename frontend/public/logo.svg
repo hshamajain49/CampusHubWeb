@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CampusHub">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1E3A8A"/>
+      <stop offset="1" stop-color="#0D9488"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#g)"/>
+  <rect x="14" y="17" width="36" height="7" rx="3.5" fill="#FFFFFF" fill-opacity=".28"/>
+  <rect x="14" y="17" width="22" height="7" rx="3.5" fill="#FFFFFF"/>
+  <rect x="14" y="28.5" width="36" height="7" rx="3.5" fill="#FFFFFF" fill-opacity=".28"/>
+  <rect x="26" y="28.5" width="24" height="7" rx="3.5" fill="#FFFFFF"/>
+  <rect x="14" y="40" width="36" height="7" rx="3.5" fill="#FFFFFF" fill-opacity=".28"/>
+  <rect x="14" y="40" width="14" height="7" rx="3.5" fill="#F59E0B"/>
+</svg>
