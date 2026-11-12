@@ -18,6 +18,8 @@ const STATS = `
   (select count(*) from public.bookings b where b.venue_id = v.id and b.status = 'approved' and (b.booking_date + b.end_time) > $NOW::timestamp) as upcoming_approved,
   (select count(*) from public.bookings b where b.venue_id = v.id and b.status = 'pending' and (b.booking_date + b.start_time) > $NOW::timestamp) as pending_count,
   (select count(*) from public.bookings b where b.venue_id = v.id) as total_bookings,
+  (select count(*) from public.complaints x where x.venue_id = v.id
+     and x.status in ('pending_review','in_progress','awaiting_confirmation')) as open_complaints,
   cb.full_name as created_by_name`;
 
 function toAdminVenue(r: any, nextBooking: AdminVenue['stats']['nextBooking'] = null): AdminVenue {
@@ -29,6 +31,7 @@ function toAdminVenue(r: any, nextBooking: AdminVenue['stats']['nextBooking'] = 
       pendingCount: r.pending_count,
       totalBookings: r.total_bookings,
       nextBooking,
+      openComplaints: r.open_complaints ?? 0,
     },
   };
 }

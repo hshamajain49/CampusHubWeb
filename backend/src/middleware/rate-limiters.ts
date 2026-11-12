@@ -41,5 +41,9 @@ export const limits = {
   realtimeToken: limiter(10 * MIN, 30),
   push: limiter(60 * MIN, 20),
   photo: limiter(60 * MIN, 20),
+  // Complaints (COMPLAINT_REGISTRATION_SPEC.md §18 "§10.14" row)
+  complaintCreate: limiter(60 * MIN, 10),
+  complaintActions: limiter(60 * MIN, 30),
+  workComplete: limiter(60 * MIN, 30),
   jobs: limiter(10 * MIN, 12, 'ip'),
 };

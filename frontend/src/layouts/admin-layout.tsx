@@ -7,6 +7,8 @@ import {
   CalendarRange,
   ChartColumn,
   ClipboardCheck,
+  Megaphone,
+  Tags,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -62,9 +64,16 @@ const GROUPS = [
   {
     label: 'Bookings',
     items: [
-      { to: '/admin/approvals', label: 'Approvals', icon: ClipboardCheck, badge: true },
+      { to: '/admin/approvals', label: 'Approvals', icon: ClipboardCheck, badge: 'approvals' },
       { to: '/admin/bookings', label: 'All bookings', icon: CalendarDays },
       { to: '/admin/calendar', label: 'Calendar', icon: CalendarRange },
+    ],
+  },
+  {
+    label: 'Complaints',
+    items: [
+      { to: '/admin/complaints', label: 'All complaints', icon: Megaphone, badge: 'complaints' },
+      { to: '/admin/complaint-setup', label: 'Departments & categories', icon: Tags },
     ],
   },
   {
@@ -89,6 +98,8 @@ const SECTION_LABELS: Record<string, string> = {
   approvals: 'Approvals',
   bookings: 'All bookings',
   calendar: 'Calendar',
+  complaints: 'All complaints',
+  'complaint-setup': 'Departments & categories',
   venues: 'Venues',
   users: 'Users',
   reports: 'Reports',
@@ -97,7 +108,9 @@ const SECTION_LABELS: Record<string, string> = {
   notifications: 'Notifications',
 };
 
-function SidebarNav({ collapsed, pending, onNavigate }: { collapsed: boolean; pending: number; onNavigate?: () => void }) {
+type Badges = { approvals: number; complaints: number };
+
+function SidebarNav({ collapsed, badges, onNavigate }: { collapsed: boolean; badges: Badges; onNavigate?: () => void }) {
   const { pathname } = useLocation();
   return (
     <nav aria-label="Admin" className="grid gap-5">
@@ -109,7 +122,8 @@ function SidebarNav({ collapsed, pending, onNavigate }: { collapsed: boolean; pe
               const exact = 'exact' in it && it.exact;
               const active = exact ? pathname === it.to : pathname === it.to || pathname.startsWith(`${it.to}/`);
               const Icon = it.icon;
-              const showBadge = 'badge' in it && it.badge && pending > 0;
+              const count = 'badge' in it ? badges[it.badge] : 0;
+              const showBadge = count > 0;
               const link = (
                 <Link
                   to={it.to}
@@ -129,7 +143,7 @@ function SidebarNav({ collapsed, pending, onNavigate }: { collapsed: boolean; pe
                     (collapsed ? (
                       <span className="absolute right-2 top-2 size-2 rounded-full bg-accent ring-2 ring-surface" />
                     ) : (
-                      <span className="tabular rounded-full bg-accent px-1.5 text-[11px] font-bold text-white">{pending > 99 ? '99+' : pending}</span>
+                      <span className="tabular rounded-full bg-accent px-1.5 text-[11px] font-bold text-white">{count > 99 ? '99+' : count}</span>
                     ))}
                 </Link>
               );
@@ -155,6 +169,9 @@ export function AdminLayout() {
   const [crumbs, setCrumbs] = React.useState<Crumb[] | null>(null);
   const dash = useAdminDashboard();
   const pending = dash.data?.kpis.pendingCount ?? 0;
+  // All complaints: open complaints needing reassignment + new today (§8.2).
+  const ck = dash.data?.complaintKpis;
+  const badges: Badges = { approvals: pending, complaints: ck ? ck.needsReassignment + ck.newToday : 0 };
 
   const section = pathname.split('/')[2] ?? 'dashboard';
   const trail = crumbs ?? [{ label: pathname.startsWith('/admin/settings/audit-log') ? 'Audit log' : (SECTION_LABELS[section] ?? 'Admin') }];
@@ -183,7 +200,7 @@ export function AdminLayout() {
             </Link>
           </div>
           <div className={cn('min-h-0 flex-1 overflow-y-auto py-5', collapsed ? 'px-3' : 'px-3')}>
-            <SidebarNav collapsed={collapsed} pending={pending} />
+            <SidebarNav collapsed={collapsed} badges={badges} />
           </div>
           <div className="border-t border-border p-3">
             {!collapsed ? (
@@ -228,7 +245,7 @@ export function AdminLayout() {
                 <Logo size={32} />
                 <Wordmark admin />
               </div>
-              <SidebarNav collapsed={false} pending={pending} onNavigate={() => setMobileOpen(false)} />
+              <SidebarNav collapsed={false} badges={badges} onNavigate={() => setMobileOpen(false)} />
               <div className="mt-6 grid gap-1 border-t border-border pt-4">
                 <Link to="/admin/profile" onClick={() => setMobileOpen(false)} className="flex h-10 items-center gap-3 rounded-[10px] px-3 text-sm font-semibold text-ink hover:bg-surface-muted">
                   <UserRound className="size-[18px]" /> Profile

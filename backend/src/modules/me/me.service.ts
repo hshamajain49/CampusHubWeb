@@ -7,6 +7,7 @@ import { loadCampus } from '../../domain/settings.js';
 import { createCredentialUser, hashPassword, revokeSessions, setPassword, verifyPassword } from '../../lib/auth-accounts.js';
 import { pushEnabled } from '../../lib/push.js';
 import type { ProfileRow } from '../../types/express.js';
+import { loadProfileRow } from '../../middleware/authenticate.js';
 
 export function toMe(p: ProfileRow): Me {
   return {
@@ -15,6 +16,9 @@ export function toMe(p: ProfileRow): Me {
     fullName: p.full_name,
     role: p.role,
     department: p.department,
+    serviceDepartment: p.service_department_id
+      ? { id: p.service_department_id, name: p.service_department_name ?? '', isActive: !!p.service_department_active }
+      : null,
     isActive: p.is_active,
     mustChangePassword: p.must_change_password,
     emailNotifications: p.email_notifications,
@@ -40,11 +44,13 @@ export async function register(body: RegisterBody) {
 
 export async function updateMe(p: ProfileRow, body: { fullName?: string; department?: string | null; emailNotifications?: boolean }): Promise<Me> {
   const department = p.role === 'super_admin' ? p.department : body.department !== undefined ? body.department : p.department;
-  const { rows } = await pool.query<ProfileRow>(
-    `update public.profiles set full_name = $2, department = $3, email_notifications = $4 where id = $1 returning *`,
-    [p.id, body.fullName ?? p.full_name, department, body.emailNotifications ?? p.email_notifications],
-  );
-  return toMe(rows[0]!);
+  await pool.query(`update public.profiles set full_name = $2, department = $3, email_notifications = $4 where id = $1`, [
+    p.id,
+    body.fullName ?? p.full_name,
+    department,
+    body.emailNotifications ?? p.email_notifications,
+  ]);
+  return toMe((await loadProfileRow(p.id))!);
 }
 
 export async function changePassword(userId: string, sessionId: string, body: { currentPassword: string; newPassword: string }) {

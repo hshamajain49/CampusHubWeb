@@ -13,7 +13,8 @@ import { useDocumentTitle } from '@/hooks/misc';
 import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/controls';
+import { Skeleton, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/controls';
+import { ComplaintReports } from './complaint-reports';
 import { Table, TableShell, TD, TH, THead, TR } from '@/components/ui/table';
 import { PageHeader } from '@/components/common/layout-bits';
 import { ErrorState } from '@/components/common/states';
@@ -21,87 +22,11 @@ import { Pill } from '@/components/common/badges';
 import { DatePicker } from '@/components/common/pickers';
 import { useAllVenueOptions, useReports } from '../api';
 import { patchParams } from '@/lib/search-params';
-
-const SLOT1 = '#2F5FD3';
-const SLOT2 = '#14A39A';
-const GRID = '#EEF1F6';
-const AXIS = { fontSize: 11.5, fill: '#5E6A82' };
-const STATUS_FILL: Record<string, string> = { approved: '#1F9D63', pending: '#D9A10B', rejected: '#DC4A4A', cancelled: '#7C879C', expired: '#EA8A1E' };
-
-function ChartCard({ title, children, table, empty }: { title: string; children: React.ReactNode; table: React.ReactNode; empty?: boolean }) {
-  return (
-    <section className="card p-4 md:p-5">
-      <h2 className="eyebrow mb-3">{title}</h2>
-      {empty ? <p className="grid h-[220px] place-items-center text-sm text-muted">No bookings in this period.</p> : children}
-      <div className="sr-only">{table}</div>
-    </section>
-  );
-}
-
-function TooltipBox({ active, payload, label, fmt }: { active?: boolean; payload?: any[]; label?: string; fmt?: (l: string) => string }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-[10px] border border-border bg-surface px-3 py-2 text-[12.5px] shadow-raised">
-      <p className="mb-1 font-semibold text-ink">{fmt ? fmt(String(label)) : label}</p>
-      {payload.map((p) => (
-        <p key={p.dataKey} className="flex items-center gap-2 text-muted">
-          <span className="size-2 rounded-full" style={{ background: p.color ?? p.fill }} />
-          {p.name}: <span className="tabular font-semibold text-ink">{p.value}</span>
-        </p>
-      ))}
-    </div>
-  );
-}
-
-/** Tall segmented bar: one whole split into parts, labels inside when they fit (dataviz "Figures"). */
-function SegmentedBar({ parts, label }: { parts: { key: string; name: string; value: number; color: string }[]; label: string }) {
-  const total = parts.reduce((s, p) => s + p.value, 0);
-  if (!total) return <p className="py-6 text-center text-sm text-muted">No bookings in this period.</p>;
-  return (
-    <div>
-      <div role="img" aria-label={`${label}: ${parts.map((p) => `${p.name} ${p.value} (${Math.round((p.value / total) * 100)}%)`).join(', ')}`} className="flex h-7 w-full gap-0.5">
-        {parts
-          .filter((p) => p.value > 0)
-          .map((p) => {
-            const share = p.value / total;
-            return (
-              <div
-                key={p.key}
-                title={`${p.name}: ${p.value} (${Math.round(share * 100)}%)`}
-                className="flex items-center overflow-hidden rounded-[4px] px-2 text-[11.5px] font-semibold text-white"
-                style={{ width: `${share * 100}%`, background: p.color }}
-              >
-                {share >= 0.1 && <span className="tabular">{Math.round(share * 100)}%</span>}
-              </div>
-            );
-          })}
-      </div>
-      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px] text-muted">
-        {parts.map((p) => (
-          <li key={p.key} className="inline-flex items-center gap-1.5">
-            <span className="size-2.5 rounded-[3px]" style={{ background: p.color }} aria-hidden />
-            {p.name} <span className="tabular font-semibold text-ink">{p.value}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="card p-4">
-      <p className="text-[12.5px] font-medium text-muted">{label}</p>
-      <p className="mt-1.5 font-display text-[22px] font-semibold leading-7 text-ink">{value}</p>
-      {hint && <p className="mt-0.5 text-[11.5px] text-subtle">{hint}</p>}
-    </div>
-  );
-}
+import { AXIS, ChartCard, GRID, Kpi, SegmentedBar, SLOT1, SLOT2, STATUS_FILL, TooltipBox } from './report-bits';
 
 type SortKey = 'venueName' | 'requests' | 'approved' | 'approvedHours' | 'utilizationPct';
 
-export default function ReportsPage() {
-  useDocumentTitle('Reports');
+function BookingReports() {
   const [params, setParams] = useSearchParams();
   const now = useCampusNow();
   const { data: settings } = usePublicSettings();
@@ -149,19 +74,15 @@ export default function ReportsPage() {
 
   return (
     <div className="grid gap-5">
-      <PageHeader
-        className="mb-0"
-        title="Reports"
-        description={r ? `${formatDate(r.range.from)} – ${formatDate(r.range.to)}` : undefined}
-        actions={
-          <>
-            {r && <Pill tone="neutral">Generated {formatTimestamp(r.generatedAt, settings?.campusTimezone ?? 'UTC')}</Pill>}
-            <Button variant="outline" onClick={() => void downloadFile('/admin/bookings/export.csv', `bookings-${today}.csv`, { dateFrom: from, dateTo: to, venueId }).catch(() => undefined)}>
-              <Download /> Export bookings (CSV)
-            </Button>
-          </>
-        }
-      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted">{r ? `${formatDate(r.range.from)} – ${formatDate(r.range.to)}` : ''}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {r && <Pill tone="neutral">Generated {formatTimestamp(r.generatedAt, settings?.campusTimezone ?? 'UTC')}</Pill>}
+          <Button variant="outline" onClick={() => void downloadFile('/admin/bookings/export.csv', `bookings-${today}.csv`, { dateFrom: from, dateTo: to, venueId }).catch(() => undefined)}>
+            <Download /> Export bookings (CSV)
+          </Button>
+        </div>
+      </div>
 
       {/* One filter row above everything it scopes. */}
       <div className="card flex flex-wrap items-center gap-2 p-3">
@@ -394,3 +315,27 @@ export default function ReportsPage() {
   );
 }
 
+
+/** A14 + CA05: one Reports page with Bookings and Complaints tabs (?tab=complaints). Each tab keeps its own filters. */
+export default function ReportsPage() {
+  useDocumentTitle('Reports');
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'complaints' ? 'complaints' : 'bookings';
+  return (
+    <div className="grid gap-5">
+      <PageHeader className="mb-0" title="Reports" />
+      <Tabs value={tab} onValueChange={(v) => setParams(v === 'bookings' ? {} : { tab: v }, { replace: true })}>
+        <TabsList>
+          <TabsTrigger value="bookings">Bookings</TabsTrigger>
+          <TabsTrigger value="complaints">Complaints</TabsTrigger>
+        </TabsList>
+        <TabsContent value="bookings" className="mt-5 outline-none">
+          {tab === 'bookings' && <BookingReports />}
+        </TabsContent>
+        <TabsContent value="complaints" className="mt-5 outline-none">
+          {tab === 'complaints' && <ComplaintReports />}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

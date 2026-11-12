@@ -7,11 +7,12 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v2 as cloudinary } from 'cloudinary';
 import sharp from 'sharp';
 import { config } from '../config/env.js';
 import { appError } from '../errors/app-error.js';
+import { neonS3 } from './s3.js';
 
 export interface StoredImage {
   secureUrl: string;
@@ -48,18 +49,6 @@ const RENDITIONS = [
   { suffix: '-thumb', width: 640, height: 360, quality: 78 },
 ] as const;
 const IMMUTABLE = 'public, max-age=31536000, immutable';
-
-let s3: S3Client | undefined;
-function neonS3(): S3Client {
-  s3 ??= new S3Client({
-    endpoint: config.AWS_ENDPOINT_URL_S3,
-    region: config.AWS_REGION,
-    credentials: { accessKeyId: config.AWS_ACCESS_KEY_ID!, secretAccessKey: config.AWS_SECRET_ACCESS_KEY! },
-    forcePathStyle: true, // required by Neon: path-style addressing only
-    maxAttempts: 2,
-  });
-  return s3;
-}
 
 const neonObjectUrl = (key: string) => `${config.AWS_ENDPOINT_URL_S3!.replace(/\/+$/, '')}/${config.NEON_STORAGE_BUCKET}/${key}`;
 

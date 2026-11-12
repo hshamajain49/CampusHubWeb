@@ -16,10 +16,11 @@ import { requireCronSecret } from './middleware/require-cron-secret.js';
 import { errorHandler, notFound } from './middleware/error-handler.js';
 import { validationError } from './errors/app-error.js';
 import { fakeImagesDir } from './lib/image-store.js';
+import { verifyFakeSignedUrl } from './lib/storage.js';
 import { runJobs, type JobTask } from './modules/jobs/jobs.service.js';
 import { mountRoutes } from './routes.js';
 
-const TASKS: JobTask[] = ['expire', 'reminders', 'deliveries', 'housekeeping'];
+const TASKS: JobTask[] = ['expire', 'complaints', 'reminders', 'deliveries', 'housekeeping'];
 
 export function createApp() {
   const app = express();
@@ -88,7 +89,24 @@ export function createApp() {
       if (!fs.existsSync(file)) return void res.status(404).end();
       res.setHeader('Cache-Control', 'public, max-age=300');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-      res.sendFile(file);
+      res.sendFile(file, { dotfiles: 'allow' }, (err) => {
+        if (err && !res.headersSent) res.status(404).end();
+      });
+    });
+  }
+  // Local-only private files for COMPLAINT_PHOTO_STORE=fake: an HMAC-signed, expiring URL stands in for an S3
+  // presigned URL (same 10-minute lifetime, same 'no signature, no file' rule). Refused in production by env validation.
+  if (config.COMPLAINT_PHOTO_STORE === 'fake') {
+    app.get('/dev-files/*key', (req, res) => {
+      const key = ([] as string[]).concat((req.params as { key: string | string[] }).key).join('/');
+      const file = verifyFakeSignedUrl(key, req.query.expires as string | undefined, req.query.sig as string | undefined);
+      if (!file || !fs.existsSync(file)) return void res.status(404).end();
+      res.setHeader('Cache-Control', 'private, max-age=600');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      // .tmp is a dot-directory: send() ignores dotfile paths unless told otherwise.
+      res.type('image/webp').sendFile(file, { dotfiles: 'allow' }, (err) => {
+        if (err && !res.headersSent) res.status(404).end();
+      });
     });
   }
   // 11. routers with their guard chains

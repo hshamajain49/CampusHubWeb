@@ -24,15 +24,25 @@ export function mapPgError(err: any): AppError | null {
       return appError('INTERNAL_ERROR');
     case 'CB005':
       return appError('VENUE_INACTIVE');
+    case 'CC001':
+      return appError('INVALID_STATUS_TRANSITION', 'This complaint can no longer be changed this way.');
+    case 'CC002':
+      return appError('TOO_MANY_FILES');
+    case 'CC003':
+      logger.error({ err }, 'immutable complaint column changed');
+      return appError('INTERNAL_ERROR');
     case '23505':
       if (constraint === 'venues_name_lower_key') return appError('VENUE_NAME_TAKEN');
       if (constraint === 'auth_users_email_lower_key' || constraint === 'profiles_email_lower_key')
         return appError('EMAIL_ALREADY_REGISTERED');
+      if (constraint === 'complaint_categories_name_lower_key') return appError('CATEGORY_NAME_TAKEN', undefined, { field: 'name' });
+      if (constraint === 'service_departments_name_lower_key') return appError('DEPARTMENT_NAME_TAKEN', undefined, { field: 'name' });
       return null;
     case '23503':
       if (err.table === 'bookings' || /bookings/.test(err.detail ?? '')) return appError('VENUE_HAS_BOOKINGS');
       return null;
     case '23514':
+      if (constraint === 'profiles_staff_department') return appError('SERVICE_DEPARTMENT_REQUIRED', undefined, { field: 'serviceDepartmentId' });
       logger.warn({ constraint, table: err.table }, 'check constraint reached the database (missing service validation)');
       return validationError({}, 'Invalid value');
     case '22023':

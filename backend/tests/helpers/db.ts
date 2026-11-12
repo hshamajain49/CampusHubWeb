@@ -65,12 +65,43 @@ export async function baseFixtures(c: pg.PoolClient) {
 export async function truncateAll() {
   await pool.query(
     `truncate notifications, email_log, booking_reminders, push_subscriptions, booking_history, bookings,
-              venue_blocks, audit_logs, venues restart identity cascade`,
+              venue_blocks, audit_logs, complaint_history, complaint_attachments, complaints, venues restart identity cascade`,
   );
+  await pool.query('update app_settings set updated_by = null where id = 1');
   await pool.query('delete from auth_users');
+  await resetComplaintSetup();
   await pool.query(
     `update app_settings set campus_timezone = 'UTC', self_registration_enabled = true, allowed_email_domains = '{}',
             max_pending_per_user = 5, min_lead_time_minutes = 0, cancellation_cutoff_minutes = 0,
-            modification_cutoff_minutes = 0 where id = 1`,
+            modification_cutoff_minutes = 0, complaint_auto_resolve_days = 7, complaint_reopen_window_days = 7,
+            complaint_max_open_per_user = 10 where id = 1`,
   );
+}
+
+/** The 7 departments and categories seeded by 20261112000100_complaints_core.sql (§10.1). */
+export const SEED_CATEGORIES = [
+  ['electrical', 'Electrical', 'zap', '#E09B10', 'Electrical Department', 10],
+  ['plumbing', 'Plumbing', 'droplets', '#2F7BD8', 'Plumbing Department', 20],
+  ['it_network', 'IT/Network', 'wifi', '#5B5BD6', 'IT Department', 30],
+  ['furniture', 'Furniture', 'armchair', '#B0703A', 'Furniture/Carpentry Department', 40],
+  ['cleanliness', 'Cleanliness', 'spray-can', '#1F9D63', 'Housekeeping Department', 50],
+  ['civil_infrastructure', 'Civil/Infrastructure', 'brick-wall', '#64748B', 'Civil/Maintenance Department', 60],
+  ['other', 'Other', 'ellipsis', '#E5654B', 'General Administration', 70],
+] as const;
+
+/** Restores the seeded departments/categories and removes ones created by tests (complaints must be gone first). */
+export async function resetComplaintSetup() {
+  const slugs = SEED_CATEGORIES.map((c) => c[0]);
+  const depts = SEED_CATEGORIES.map((c) => c[4]);
+  await pool.query('delete from complaint_categories where slug <> all($1::text[])', [slugs]);
+  await pool.query('update service_departments set is_active = true, description = null where name = any($1::text[])', [depts]);
+  for (const [slug, name, icon, color, dept, order] of SEED_CATEGORIES) {
+    await pool.query(
+      `update complaint_categories set name = $2, icon = $3, color = $4, sort_order = $6, is_active = true, description = null,
+              department_id = (select id from service_departments where name = $5)
+        where slug = $1`,
+      [slug, name, icon, color, dept, order],
+    );
+  }
+  await pool.query('delete from service_departments where name <> all($1::text[])', [depts]);
 }

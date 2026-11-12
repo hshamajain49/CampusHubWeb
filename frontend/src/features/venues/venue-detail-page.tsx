@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
-import { Building2, CalendarPlus, LayoutGrid, MapPin, Shapes, Users } from 'lucide-react';
+import { Building2, CalendarPlus, LayoutGrid, MapPin, Shapes, Users, Megaphone } from 'lucide-react';
 import { VENUE_TYPE_LABELS, addDays, localDateTimeToMinutes, toLocalDateTime, type AvailabilityInterval, type PublicSettings, type Venue } from '@campushub/shared';
 import { cn } from '@/lib/utils';
 import { formatShortDay, formatNumber } from '@/lib/format';
@@ -214,10 +214,22 @@ export function VenueDetailPage() {
               </Link>
             </Button>
             <p className="mt-3 text-center text-[12.5px] text-muted">Requests are reviewed by the administrator.</p>
+            <Link
+              to={`/complaints/new?venueId=${v.id}`}
+              className="mt-4 flex items-center justify-center gap-1.5 border-t border-border pt-4 text-[13px] font-semibold text-primary hover:underline"
+            >
+              <Megaphone className="size-4" /> Report an issue with this venue
+            </Link>
           </div>
         </aside>
       </div>
 
+      <Link
+        to={`/complaints/new?venueId=${v.id}`}
+        className="mt-5 flex items-center justify-center gap-1.5 text-[13px] font-semibold text-primary hover:underline lg:hidden"
+      >
+        <Megaphone className="size-4" /> Report an issue with this venue
+      </Link>
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 pt-3 backdrop-blur-[6px] safe-bottom lg:hidden">
         <div className="mx-auto flex max-w-[1200px] items-center gap-3">
           <div className="min-w-0 flex-1">

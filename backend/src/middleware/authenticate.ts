@@ -20,10 +20,21 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
   next();
 };
 
+/** Profile + its service department (department_staff), as used by /me and the staff guard. */
+export const PROFILE_SELECT = `
+  select p.*, sd.name as service_department_name, sd.is_active as service_department_active
+    from public.profiles p
+    left join public.service_departments sd on sd.id = p.service_department_id`;
+
+export async function loadProfileRow(id: string): Promise<ProfileRow | null> {
+  const { rows } = await pool.query<ProfileRow>(`${PROFILE_SELECT} where p.id = $1`, [id]);
+  return rows[0] ?? null;
+}
+
 export const loadProfile: RequestHandler = async (req, _res, next) => {
-  const { rows } = await pool.query<ProfileRow>('select p.* from public.profiles p where p.id = $1', [req.auth!.userId]);
-  if (!rows[0]) return next(appError('UNAUTHENTICATED', 'Your account is not set up. Contact the administrator.'));
-  req.profile = rows[0];
+  const profile = await loadProfileRow(req.auth!.userId);
+  if (!profile) return next(appError('UNAUTHENTICATED', 'Your account is not set up. Contact the administrator.'));
+  req.profile = profile;
   next();
 };
 

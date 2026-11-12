@@ -27,13 +27,20 @@ export async function closePools() {
   await Promise.allSettled([pool.end(), appPool.end()]);
 }
 
-export async function createUser(email: string, role: Role = 'student', name = email.split('@')[0]!): Promise<string> {
+/** department_staff accounts need a service department (pass its name, e.g. 'Electrical Department'). */
+export async function createUser(email: string, role: Role = 'student', name = email.split('@')[0]!, serviceDepartment?: string): Promise<string> {
   hash ??= await hashPassword(PASSWORD);
   const c = await appPool.connect();
   try {
     await c.query('begin');
     const id = await createCredentialUser(c, { email, name, passwordHash: hash });
-    if (role !== 'student') await c.query('update profiles set role = $2 where id = $1', [id, role]);
+    if (role !== 'student') {
+      await c.query('update profiles set role = $2, service_department_id = (select id from service_departments where name = $3) where id = $1', [
+        id,
+        role,
+        serviceDepartment ?? null,
+      ]);
+    }
     await c.query('commit');
     return id;
   } catch (e) {
@@ -57,6 +64,12 @@ export async function member(email: string, role: Role = 'student') {
   return { id, token: await signIn(email) };
 }
 
+/** A signed-in department_staff member of the named service department. */
+export async function staffMember(email: string, serviceDepartment: string) {
+  const id = await createUser(email, 'department_staff', email.split('@')[0]!, serviceDepartment);
+  return { id, token: await signIn(email) };
+}
+
 export function as(token: string) {
   const auth = (r: request.Test) => r.set('authorization', `Bearer ${token}`).set('origin', ORIGIN);
   return {
@@ -64,6 +77,13 @@ export function as(token: string) {
     post: (p: string, body?: object) => auth(request(app).post(`/api/v1${p}`)).send(body ?? {}),
     patch: (p: string, body: object) => auth(request(app).patch(`/api/v1${p}`)).send(body),
     delete: (p: string) => auth(request(app).delete(`/api/v1${p}`)),
+    /** multipart/form-data: a JSON "data" part plus photo files (complaints C02, C12, C19). */
+    multipart: (p: string, data: object, photos: { buffer: Buffer; name: string }[] = [], headers: Record<string, string> = {}) => {
+      let r = auth(request(app).post(`/api/v1${p}`)).field('data', JSON.stringify(data));
+      for (const [k, v] of Object.entries(headers)) r = r.set(k, v);
+      for (const f of photos) r = r.attach('photos', f.buffer, f.name);
+      return r;
+    },
   };
 }
 

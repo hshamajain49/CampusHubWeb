@@ -7,12 +7,13 @@ import { loadCampus } from '../../domain/settings.js';
 import { BOOKING_SELECT, toLdt } from '../bookings/booking.queries.js';
 import { toAdminListItem } from '../bookings/booking.mapper.js';
 import { toVenueBlock } from '../venue-blocks/venue-blocks.service.js';
+import { complaintKpis, complaintsNeedingReassignment } from '../admin-complaints/admin-complaints.service.js';
 
 export async function adminDashboard(): Promise<AdminDashboard> {
   const campus = await loadCampus(pool);
   const now = campus.localNow.replace('T', ' ');
   const today = campus.today;
-  const [kpi, attention, schedule, blocks, activity] = await Promise.all([
+  const [kpi, attention, schedule, blocks, activity, cKpis, reassign] = await Promise.all([
     pool.query(
       `select
          (select count(*) from public.bookings where status = 'pending' and (booking_date + start_time) > $1::timestamp) as pending,
@@ -21,7 +22,7 @@ export async function adminDashboard(): Promise<AdminDashboard> {
          (select count(*) from public.bookings where status = 'approved' and booking_date between $2::date and $3::date) as next7,
          (select count(*) from public.venues where is_active) as active_venues,
          (select count(*) from public.venues where not is_active) as inactive_venues,
-         (select count(*) from public.profiles where is_active and role in ('student','faculty_staff')) as active_members,
+         (select count(*) from public.profiles where is_active and role in ('student','faculty_staff','department_staff')) as active_members,
          (select count(*) filter (where status = 'approved') from public.bookings where decided_at > now() - interval '30 days') as approved30,
          (select count(*) filter (where status = 'rejected') from public.bookings where decided_at > now() - interval '30 days') as rejected30`,
       [now, today, addDays(today, 6)],
@@ -47,6 +48,8 @@ export async function adminDashboard(): Promise<AdminDashboard> {
          left join public.profiles a on a.id = h.actor_id
         order by h.created_at desc, h.id desc limit 10`,
     ),
+    complaintKpis(campus.settings.campusTimezone),
+    complaintsNeedingReassignment(5),
   ]);
   const k = kpi.rows[0];
   const decided = k.approved30 + k.rejected30;
@@ -61,6 +64,8 @@ export async function adminDashboard(): Promise<AdminDashboard> {
       activeMembers: k.active_members,
       approvalRate30d: decided ? Math.round((k.approved30 / decided) * 1000) / 1000 : 0,
     },
+    complaintKpis: cKpis,
+    complaintsNeedingReassignment: reassign,
     needsAttention: attention.rows.map((r) => toAdminListItem(r, campus.localNow)),
     todaySchedule: schedule.rows.map((r) => toAdminListItem(r, campus.localNow)),
     upcomingBlocks: blocks.rows.map(toVenueBlock),

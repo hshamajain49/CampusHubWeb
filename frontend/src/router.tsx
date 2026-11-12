@@ -1,7 +1,7 @@
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import { setNavigate } from '@/lib/navigation';
 import { RedirectIfAuthenticated, RequireAuth, RequireRole, RootRedirect } from '@/routes/guards';
-import { adminPages as A, authPages, memberPages as M } from '@/routes/pages';
+import { adminPages as A, authPages, memberPages as M, staffPages as S } from '@/routes/pages';
 import { RouteErrorBoundary } from '@/components/common/route-error-boundary';
 import { FullScreenSpinner } from '@/components/ui/spinner';
 import { AuthLayout } from '@/layouts/auth-layout';
@@ -54,7 +54,7 @@ const routes: RouteObject[] = [
         element: <RequireAuth />,
         children: [
           {
-            element: <RequireRole roles={['student', 'faculty_staff']} />,
+            element: <RequireRole roles={['student', 'faculty_staff', 'department_staff']} />,
             children: [
               {
                 element: <UserLayout />,
@@ -71,6 +71,17 @@ const routes: RouteObject[] = [
                   { path: '/bookings/:bookingId/submitted', ...page(M.bookingSubmitted, 'BookingSubmittedPage') },
                   { path: '/profile', ...page(M.profile, 'ProfilePage') },
                   { path: '/notifications', ...page(M.notifications, 'NotificationsPage') },
+                  { path: '/complaints', ...page(M.complaints, 'MyComplaintsPage') },
+                  { path: '/complaints/new', ...page(M.complaints, 'NewComplaintPage') },
+                  { path: '/complaints/:complaintId', ...page(M.complaints, 'ComplaintDetailPage') },
+                  {
+                    element: <RequireRole roles={['department_staff']} />,
+                    children: [
+                      { path: '/staff', ...page(S.staff, 'StaffDashboardPage') },
+                      { path: '/staff/complaints', ...page(S.staff, 'StaffQueuePage') },
+                      { path: '/staff/complaints/:complaintId', ...page(S.staff, 'StaffComplaintPage') },
+                    ],
+                  },
                 ],
               },
             ],
@@ -88,6 +99,10 @@ const routes: RouteObject[] = [
                   { path: '/admin/bookings', ...admin(A.bookings) },
                   { path: '/admin/bookings/:bookingId', ...admin(A.bookingDetail) },
                   { path: '/admin/calendar', ...admin(A.calendar) },
+                  { path: '/admin/complaints', ...admin(A.complaints) },
+                  { path: '/admin/complaints/new', ...admin(A.complaintNew) },
+                  { path: '/admin/complaints/:complaintId', ...admin(A.complaintDetail) },
+                  { path: '/admin/complaint-setup', ...admin(A.complaintSetup) },
                   { path: '/admin/venues', ...admin(A.venues) },
                   { path: '/admin/venues/new', ...admin(A.venueNew) },
                   { path: '/admin/venues/:venueId', ...admin(A.venueDetail) },

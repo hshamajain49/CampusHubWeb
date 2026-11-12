@@ -24,12 +24,12 @@ interface LayoutInput {
 
 function layout(i: LayoutInput): { html: string; text: string } {
   const footer = i.footer
-    ? `You're receiving this because you have a CampusHub Venue Booking account. Manage email preferences: ${config.FRONTEND_URL}/profile`
+    ? `You're receiving this because you have a CampusHub account. Manage email preferences: ${config.FRONTEND_URL}/profile`
     : '';
   const html = `<!doctype html><html><body style="margin:0;padding:0;background:#F4F6FB;font-family:Inter,Segoe UI,Arial,sans-serif;color:#141B2D">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F6FB;padding:32px 16px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#FFFFFF;border:1px solid #E4E8F1;border-radius:14px">
-<tr><td style="padding:20px 28px;border-bottom:1px solid #E4E8F1;font-weight:700;font-size:14px;color:#1E3A8A;letter-spacing:.2px">${escapeHtml(i.institutionName)} · CampusHub Venue Booking</td></tr>
+<tr><td style="padding:20px 28px;border-bottom:1px solid #E4E8F1;font-weight:700;font-size:14px;color:#1E3A8A;letter-spacing:.2px">${escapeHtml(i.institutionName)} · CampusHub</td></tr>
 <tr><td style="padding:28px">
 <h1 style="margin:0 0 12px;font-size:20px;line-height:28px;font-weight:600;color:#141B2D">${escapeHtml(i.title)}</h1>
 <p style="margin:0 0 24px;font-size:15px;line-height:23px;color:#141B2D">${escapeHtml(i.body)}</p>
@@ -47,7 +47,7 @@ export function renderPasswordReset(institutionName: string, url: string): Rende
   const { html, text } = layout({
     institutionName,
     title: 'Reset your password',
-    body: 'Someone asked to reset the password for your CampusHub Venue Booking account. Use the button below to choose a new password.',
+    body: 'Someone asked to reset the password for your CampusHub account. Use the button below to choose a new password.',
     extra: "This link works once and expires in 1 hour. If you didn't ask for it, ignore this email.",
     buttonLabel: 'Reset password',
     url,

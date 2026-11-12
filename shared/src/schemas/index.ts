@@ -1,6 +1,6 @@
 // Request schemas for every endpoint (§15). Bodies are strict: unknown keys are rejected.
 import { z } from 'zod';
-import { BLOCK_TYPES, BOOKING_STATUSES, MEMBER_ROLES, REMINDER_LEADS, ROLES, TIME_STEPS, VENUE_TYPES } from '../enums.js';
+import { AUDIT_ENTITY_TYPES, BLOCK_TYPES, BOOKING_STATUSES, MEMBER_ROLES, REMINDER_LEADS, ROLES, TIME_STEPS, VENUE_TYPES } from '../enums.js';
 import {
   boolFromQuery,
   csvOf,
@@ -20,6 +20,7 @@ import {
 import { diffDays, localDateTimeToMinutes, timeToMinutes } from '../time.js';
 
 export * from './common.js';
+export * from './complaints.js';
 
 function requireOne<T extends z.ZodTypeAny>(schema: T, keys: string[], message = 'Provide at least one field to change.') {
   return schema.refine((v) => keys.some((k) => (v as Record<string, unknown>)[k] !== undefined), { message });
@@ -345,6 +346,7 @@ export const deactivateVenueBody = z
 export const usersQuery = z.object({
   q: searchQ.optional(),
   role: z.enum(ROLES).optional(),
+  serviceDepartmentId: uuid.optional(),
   isActive: boolFromQuery.optional(),
   sort: sortParam(['createdAt:desc', 'name:asc']).default('createdAt:desc'),
   ...pagination(20, 100),
@@ -355,6 +357,8 @@ export const createUserBody = z.strictObject({
   email: emailSchema,
   role: z.enum(MEMBER_ROLES),
   department: optionalDepartment,
+  /** Required for department_staff, refused for other roles (checked by the service: SERVICE_DEPARTMENT_REQUIRED). */
+  serviceDepartmentId: uuid.nullable().optional(),
   temporaryPassword: passwordSchema,
 });
 
@@ -363,8 +367,9 @@ export const updateUserBody = requireOne(
     fullName: fullNameSchema.optional(),
     role: z.enum(MEMBER_ROLES).optional(),
     department: optionalDepartment,
+    serviceDepartmentId: uuid.nullable().optional(),
   }),
-  ['fullName', 'role', 'department'],
+  ['fullName', 'role', 'department', 'serviceDepartmentId'],
 );
 
 export const deactivateUserBody = z.strictObject({ cancelUpcomingBookings: z.boolean().default(false) });
@@ -378,7 +383,7 @@ export const reportsQuery = z
   });
 
 export const auditQuery = z.object({
-  entityType: z.enum(['booking', 'venue', 'venue_block', 'user', 'settings', 'system']).optional(),
+  entityType: z.enum(AUDIT_ENTITY_TYPES).optional(),
   entityId: z.string().min(1).max(64).optional(),
   actorId: uuid.optional(),
   action: z.string().trim().min(1).max(60).optional(),
@@ -408,12 +413,16 @@ export const settingsUpdateBody = requireOne(
     emailNotificationsEnabled: z.boolean().optional(),
     emailDailyLimit: minutesRange(0, 300).optional(),
     reminderLeadMinutes: z.number().int().refine((v) => (REMINDER_LEADS as readonly number[]).includes(v), 'Choose a listed reminder time').optional(),
+    complaintAutoResolveDays: z.number().int().min(1, 'Use 1–60 days, or turn it off').max(60, 'Use 1–60 days, or turn it off').nullable().optional(),
+    complaintReopenWindowDays: minutesRange(0, 60).optional(),
+    complaintMaxOpenPerUser: minutesRange(1, 100).optional(),
   }),
   [
     'institutionName', 'supportEmail', 'operatingHoursStart', 'operatingHoursEnd', 'timeStepMinutes',
     'minDurationMinutes', 'maxDurationMinutes', 'maxAdvanceDays', 'minLeadTimeMinutes', 'cancellationCutoffMinutes',
     'modificationCutoffMinutes', 'maxPendingPerUser', 'selfRegistrationEnabled', 'allowedEmailDomains',
-    'emailNotificationsEnabled', 'emailDailyLimit', 'reminderLeadMinutes',
+    'emailNotificationsEnabled', 'emailDailyLimit', 'reminderLeadMinutes', 'complaintAutoResolveDays',
+    'complaintReopenWindowDays', 'complaintMaxOpenPerUser',
   ],
   'Provide at least one setting to change.',
 );

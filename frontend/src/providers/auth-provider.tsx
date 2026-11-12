@@ -130,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function roleHome(role: Me['role']): string {
-  return role === 'super_admin' ? '/admin/dashboard' : '/dashboard';
+  return role === 'super_admin' ? '/admin/dashboard' : role === 'department_staff' ? '/staff' : '/dashboard';
 }
 
 export function canAccess(role: Me['role'], path: string): boolean {

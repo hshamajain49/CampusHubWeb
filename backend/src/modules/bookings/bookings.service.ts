@@ -23,6 +23,7 @@ import {
 import { publish } from '../notifications/notifier.js';
 import { findConflicts, loadBookingRow, loadHistory, type ConflictResult } from './booking.queries.js';
 import { toBooking, toBookingSummary } from './booking.mapper.js';
+import { memberComplaintSummary } from '../complaints/complaints.service.js';
 
 const CONFLICT_MESSAGE = 'This venue is already booked for the selected date/time. Please choose a different slot.';
 
@@ -308,15 +309,16 @@ export async function memberDashboard(requesterId: string): Promise<MemberDashbo
       order by b.booking_date, b.start_time limit 1`,
     [requesterId, now],
   );
-  const recent = await pool.query(
-    `select * from (${BOOKING_SELECT_INNER}) b where b.requester_id = $1 order by b.created_at desc limit 5`,
-    [requesterId],
-  );
+  const [recent, complaints] = await Promise.all([
+    pool.query(`select * from (${BOOKING_SELECT_INNER}) b where b.requester_id = $1 order by b.created_at desc limit 5`, [requesterId]),
+    memberComplaintSummary(requesterId),
+  ]);
   const map = (r: any) => toBookingSummary(normalize(r), campus.settings, campus.localNow);
   return {
     counts: { pending: counts.pending, upcomingApproved: counts.upcoming_approved, history: counts.history },
     nextBooking: next.rows[0] ? map(next.rows[0]) : null,
     recentBookings: recent.rows.map(map),
+    ...complaints,
   };
 }
 

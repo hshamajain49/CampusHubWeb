@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { ArrowRight, CalendarCheck, CalendarDays, CalendarPlus, Clock, DoorOpen, History, Hourglass, MapPin } from 'lucide-react';
+import { ArrowRight, CalendarCheck, CalendarDays, CalendarPlus, Clock, DoorOpen, History, Hourglass, MapPin, Megaphone, ThumbsUp } from 'lucide-react';
 import { useDocumentTitle } from '@/hooks/misc';
 import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
 import { useMe } from '@/providers/auth-provider';
@@ -14,11 +14,14 @@ import { VenueBanner } from '@/components/common/venue-visuals';
 import { TimingChip } from '@/components/common/booking-visuals';
 import { DayAvailabilityBar } from '@/components/common/day-availability-bar';
 import { useMemberDashboard } from '@/features/bookings/api';
+import { Alert } from '@/components/ui/controls';
+import { CategoryTile, ComplaintStatusBadge } from '@/features/complaints/components/complaint-visuals';
+import { timeAgo } from '@/lib/format';
 
 const QUICK = [
   { to: '/venues', icon: CalendarPlus, title: 'Book a venue', text: 'Find and reserve a space', tone: 'bg-primary-soft text-primary' },
   { to: '/bookings', icon: CalendarDays, title: 'My bookings', text: 'Track your requests', tone: 'bg-secondary-soft text-secondary-text' },
-  { to: '/bookings/history', icon: History, title: 'Booking history', text: 'Past and closed bookings', tone: 'bg-surface-muted text-muted' },
+  { to: '/complaints/new', icon: Megaphone, title: 'Report an issue', text: "Something broken? We'll route it", tone: 'bg-warning-soft text-warning-text' },
 ];
 
 export function DashboardPage() {
@@ -39,20 +42,34 @@ export function DashboardPage() {
         <RoleBadge role={me.role} />
       </div>
 
-      <div className="stagger grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 md:gap-4">
+      {d && d.complaints.awaitingYourReview > 0 && (
+        <Alert
+          variant="warning"
+          icon={<ThumbsUp />}
+          title={`You have ${d.complaints.awaitingYourReview} complaint${d.complaints.awaitingYourReview === 1 ? '' : 's'} waiting for your review`}
+          action={
+            <Link to="/complaints" className="text-[13px] font-semibold underline-offset-2 hover:underline">
+              Review now
+            </Link>
+          }
+        >
+          The department says the work is done. Approve it, or send it back if it's not fixed.
+        </Alert>
+      )}
+
+      <div className="stagger grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         {dash.isLoading ? (
-          [0, 1, 2].map((i) => <Skeleton key={i} className="h-[138px] rounded-[14px]" />)
+          [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[138px] rounded-[14px]" />)
         ) : dash.isError ? (
-          <div className="sm:col-span-2 md:col-span-3">
+          <div className="col-span-2 md:col-span-4">
             <SectionError onRetry={() => dash.refetch()} />
           </div>
         ) : (
           <>
             <StatCard icon={Hourglass} tone="pending" label="Pending requests" value={d!.counts.pending} to="/bookings?status=pending" />
             <StatCard icon={CalendarCheck} tone="approved" label="Upcoming bookings" value={d!.counts.upcomingApproved} to="/bookings?status=approved" />
-            <div className="sm:col-span-2 md:col-span-1">
-              <StatCard icon={History} tone="neutral" label="Past & closed" value={d!.counts.history} to="/bookings/history" />
-            </div>
+            <StatCard icon={History} tone="neutral" label="Past & closed" value={d!.counts.history} to="/bookings/history" />
+            <StatCard icon={Megaphone} tone="violet" label="Open complaints" value={d!.complaints.open} to="/complaints" />
           </>
         )}
       </div>
@@ -144,6 +161,41 @@ export function DashboardPage() {
           </div>
         </section>
       </div>
+
+      <SectionCard title="Recent complaints" action={<ViewAllLink to="/complaints" />} bodyClassName="px-2 pb-2 md:px-3 md:pb-3">
+        {dash.isLoading ? (
+          <div className="grid gap-2 p-2">
+            {[0, 1].map((i) => (
+              <Skeleton key={i} className="h-14" />
+            ))}
+          </div>
+        ) : dash.isError ? null : d!.recentComplaints.length === 0 ? (
+          <p className="px-3 py-6 text-center text-sm text-muted">
+            No complaints. If something on campus needs fixing,{' '}
+            <Link to="/complaints/new" className="font-semibold text-primary hover:underline">
+              report an issue
+            </Link>
+            .
+          </p>
+        ) : (
+          <ul className="stagger grid">
+            {d!.recentComplaints.map((c) => (
+              <li key={c.id}>
+                <Link to={`/complaints/${c.id}`} className="flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-colors duration-100 hover:bg-surface-muted">
+                  <CategoryTile icon={c.category.icon} color={c.category.color} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-ink">{c.title}</span>
+                    <span className="tabular block truncate text-[12.5px] text-muted">
+                      {c.category.name} · {timeAgo(c.createdAt)}
+                    </span>
+                  </span>
+                  <ComplaintStatusBadge status={c.status} size="sm" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SectionCard>
 
       <SectionCard title="Recent requests" action={<ViewAllLink to="/bookings" />} bodyClassName="px-2 pb-2 md:px-3 md:pb-3">
         {dash.isLoading ? (

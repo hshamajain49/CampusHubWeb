@@ -1,5 +1,6 @@
 // Settings: public (E01), admin read (E45) and update (E46) with merged cross-field validation.
 import {
+  COMPLAINT_PHOTO_RULES,
   campusNow,
   validateSettingsCrossFields,
   type PublicSettings,
@@ -40,6 +41,14 @@ export async function publicSettings(): Promise<PublicSettings> {
     selfRegistrationEnabled: s.selfRegistrationEnabled,
     allowedEmailDomains: s.allowedEmailDomains,
     bookingRules: rulesOf(s),
+    complaintRules: {
+      maxPhotos: COMPLAINT_PHOTO_RULES.maxPhotos,
+      maxPhotoMb: COMPLAINT_PHOTO_RULES.maxPhotoMb,
+      acceptedTypes: [...COMPLAINT_PHOTO_RULES.acceptedTypes],
+      autoResolveDays: s.complaintAutoResolveDays,
+      reopenWindowDays: s.complaintReopenWindowDays,
+      maxOpenPerUser: s.complaintMaxOpenPerUser,
+    },
     serverTime: { date: now.date, time: now.time, timestamp: new Date().toISOString() },
     pushPublicKey: integrations.push === 'configured' ? config.VAPID_PUBLIC_KEY! : null,
     realtimeEnabled,
@@ -69,6 +78,9 @@ export async function adminSettings(): Promise<Settings> {
     emailNotificationsEnabled: s.emailNotificationsEnabled,
     emailDailyLimit: s.emailDailyLimit,
     reminderLeadMinutes: s.reminderLeadMinutes,
+    complaintAutoResolveDays: s.complaintAutoResolveDays,
+    complaintReopenWindowDays: s.complaintReopenWindowDays,
+    complaintMaxOpenPerUser: s.complaintMaxOpenPerUser,
     emailUsageToday: { sent: r.sent_today, skipped: r.skipped_today, authSent: r.auth_today },
     channels: { email: integrations.email, push: integrations.push, realtime: integrations.realtime, images: integrations.images },
     updatedAt: new Date(s.updatedAt).toISOString(),
@@ -94,6 +106,9 @@ const COLUMN: Record<string, string> = {
   emailNotificationsEnabled: 'email_notifications_enabled',
   emailDailyLimit: 'email_daily_limit',
   reminderLeadMinutes: 'reminder_lead_minutes',
+  complaintAutoResolveDays: 'complaint_auto_resolve_days',
+  complaintReopenWindowDays: 'complaint_reopen_window_days',
+  complaintMaxOpenPerUser: 'complaint_max_open_per_user',
 };
 
 export async function updateSettings(actor: Actor, body: SettingsUpdateBody): Promise<Settings> {

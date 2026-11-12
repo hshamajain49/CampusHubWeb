@@ -22,20 +22,47 @@ import { UserAvatar } from '@/components/common/small';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { useAdminBreadcrumb } from '@/layouts/admin-layout';
 import { useUser, useUserMutations } from '../api';
+import { useServiceDepartments } from '@/features/complaints/api';
 
 function RoleForm({ u }: { u: UserDetail }) {
   const m = useUserMutations();
-  const schema = z.object({ fullName: fullNameSchema, role: z.enum(['student', 'faculty_staff']), department: z.union([departmentSchema, z.literal('')]) });
+  const depts = useServiceDepartments();
+  const schema = z
+    .object({
+      fullName: fullNameSchema,
+      role: z.enum(['student', 'faculty_staff', 'department_staff']),
+      department: z.union([departmentSchema, z.literal('')]),
+      serviceDepartmentId: z.string(),
+    })
+    .refine((v) => v.role !== 'department_staff' || !!v.serviceDepartmentId, {
+      message: "Choose the staff member's department.",
+      path: ['serviceDepartmentId'],
+    });
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     mode: 'onTouched',
-    values: { fullName: u.fullName, role: u.role === 'faculty_staff' ? 'faculty_staff' : 'student', department: u.department ?? '' },
+    values: {
+      fullName: u.fullName,
+      role: u.role === 'super_admin' ? 'student' : u.role,
+      department: u.department ?? '',
+      serviceDepartmentId: u.serviceDepartment?.id ?? '',
+    },
   });
+  const role = form.watch('role');
   const onSubmit = form.handleSubmit(async (v) => {
     try {
-      await m.update.mutateAsync({ id: u.id, body: { fullName: v.fullName, role: v.role, department: v.department || null } });
+      await m.update.mutateAsync({
+        id: u.id,
+        body: {
+          fullName: v.fullName,
+          role: v.role,
+          department: v.department || null,
+          serviceDepartmentId: v.role === 'department_staff' ? v.serviceDepartmentId : null,
+        },
+      });
       toast.success('User updated.');
     } catch (e) {
+      if (isApiError(e) && e.code === 'SERVICE_DEPARTMENT_REQUIRED') return form.setError('serviceDepartmentId', { message: e.message });
       toast.error(isApiError(e) ? e.message : 'Something went wrong. Please try again.');
     }
   });
@@ -59,12 +86,35 @@ function RoleForm({ u }: { u: UserDetail }) {
                     options={[
                       { value: 'student', label: 'Student' },
                       { value: 'faculty_staff', label: 'Faculty / Staff' },
+                      { value: 'department_staff', label: 'Department Staff' },
                     ]}
                   />
                 )}
               />
             )}
           </Field>
+          {role === 'department_staff' && (
+            <Field label="Service department" error={form.formState.errors.serviceDepartmentId?.message}>
+              {(p) => (
+                <Controller
+                  control={form.control}
+                  name="serviceDepartmentId"
+                  render={({ field }) => (
+                    <Select
+                      id={p.id}
+                      invalid={!!form.formState.errors.serviceDepartmentId}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      placeholder="Choose a department"
+                      options={(depts.data ?? [])
+                        .filter((d) => d.isActive || d.id === u.serviceDepartment?.id)
+                        .map((d) => ({ value: d.id, label: d.isActive ? d.name : `${d.name} (inactive)` }))}
+                    />
+                  )}
+                />
+              )}
+            </Field>
+          )}
           <Field label="Department" optional error={form.formState.errors.department?.message}>
             {(p) => <Input {...p} {...form.register('department')} />}
           </Field>
@@ -116,6 +166,12 @@ export default function UserDetailPage() {
             {u.mustChangePassword && <Pill tone="warning">Must change password</Pill>}
           </div>
           <p className="truncate text-sm text-muted">{u.email}</p>
+          {u.serviceDepartment && (
+            <p className="mt-0.5 text-[13px] text-ink">
+              Service department: <span className="font-semibold">{u.serviceDepartment.name}</span>
+              {!u.serviceDepartment.isActive && <span className="text-warning-text"> (inactive)</span>}
+            </p>
+          )}
           <p className="tabular mt-1 text-[12.5px] text-muted">
             Joined {formatDate(u.createdAt.slice(0, 10))} · Last sign-in {u.lastSignInAt ? formatTimestamp(u.lastSignInAt, tz) : 'never'}
           </p>

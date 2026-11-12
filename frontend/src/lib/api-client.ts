@@ -123,6 +123,60 @@ export async function apiFetchWithResponse<T>(path: string, opts: ApiOptions = {
   return { data: (binary ? body : body?.data) as T, res };
 }
 
+/**
+ * multipart/form-data POST with upload progress (XMLHttpRequest: fetch has no upload progress events).
+ * Same bearer header, error envelope and global auth handling as apiFetch.
+ */
+export function apiUpload<T>(
+  path: string,
+  formData: FormData,
+  opts: { headers?: Record<string, string>; onProgress?: (ratio: number) => void; signal?: AbortSignal } = {},
+): Promise<{ data: T; status: number; replay: boolean }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE}${path}`);
+    xhr.timeout = 120_000;
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.setRequestHeader('X-Request-Id', crypto.randomUUID());
+    const token = getToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    for (const [k, v] of Object.entries(opts.headers ?? {})) xhr.setRequestHeader(k, v);
+    if (opts.onProgress) xhr.upload.onprogress = (e) => e.lengthComputable && opts.onProgress!(e.loaded / e.total);
+    opts.signal?.addEventListener('abort', () => xhr.abort());
+    const stopTimer = startSlowTimer();
+    const fail = () => {
+      stopTimer();
+      reject(new ApiError(0, 'NETWORK_ERROR', DEFAULT_ERROR_MESSAGES.NETWORK_ERROR!));
+    };
+    xhr.onerror = fail;
+    xhr.ontimeout = fail;
+    xhr.onabort = fail;
+    xhr.onload = () => {
+      stopTimer();
+      markApiWarm();
+      let body: any = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        /* non-JSON */
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve({ data: body?.data as T, status: xhr.status, replay: xhr.getResponseHeader('Idempotent-Replay') === 'true' });
+        return;
+      }
+      const e = body?.error;
+      const err = e
+        ? new ApiError(xhr.status, e.code, e.message, e.details, e.requestId)
+        : new ApiError(xhr.status, xhr.status === 429 ? 'RATE_LIMITED' : 'INTERNAL_ERROR', DEFAULT_ERROR_MESSAGES.INTERNAL_ERROR!);
+      if (xhr.status === 401) handlers.onUnauthenticated();
+      if (err.code === 'ACCOUNT_DEACTIVATED') handlers.onDeactivated();
+      if (err.code === 'PASSWORD_CHANGE_REQUIRED') handlers.onPasswordChangeRequired();
+      reject(err);
+    };
+    xhr.send(formData);
+  });
+}
+
 export function isApiError(e: unknown): e is ApiError {
   return e instanceof ApiError;
 }

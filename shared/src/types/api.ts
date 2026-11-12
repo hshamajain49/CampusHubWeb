@@ -9,6 +9,9 @@ import type {
   Role,
   VenueType,
 } from '../enums.js';
+import type { ComplaintKpis, ComplaintRules, ComplaintSummary, DepartmentRef } from './complaints.js';
+
+export * from './complaints.js';
 
 export interface ListMeta {
   page: number;
@@ -33,6 +36,8 @@ export interface Me {
   fullName: string;
   role: Role;
   department: string | null;
+  /** Set for department_staff accounts (COMPLAINT_REGISTRATION_SPEC.md §11.4 E03). */
+  serviceDepartment: (DepartmentRef & { isActive: boolean }) | null;
   isActive: boolean;
   mustChangePassword: boolean;
   emailNotifications: boolean;
@@ -60,6 +65,7 @@ export interface PublicSettings {
   selfRegistrationEnabled: boolean;
   allowedEmailDomains: string[];
   bookingRules: BookingRules;
+  complaintRules: ComplaintRules;
   serverTime: { date: string; time: string; timestamp: string };
   pushPublicKey: string | null;
   realtimeEnabled: boolean;
@@ -76,6 +82,9 @@ export interface Settings extends BookingRules {
   emailNotificationsEnabled: boolean;
   emailDailyLimit: number;
   reminderLeadMinutes: number;
+  complaintAutoResolveDays: number | null;
+  complaintReopenWindowDays: number;
+  complaintMaxOpenPerUser: number;
   emailUsageToday: { sent: number; skipped: number; authSent: number };
   channels: { email: ChannelStatus; push: ChannelStatus; realtime: ChannelStatus; images: ChannelStatus };
   updatedAt: string;
@@ -114,6 +123,7 @@ export interface AdminVenue extends Venue {
     pendingCount: number;
     totalBookings: number;
     nextBooking: BookingSummary | null;
+    openComplaints: number;
   };
 }
 
@@ -300,6 +310,7 @@ export interface UserListItem {
   email: string;
   role: Role;
   department: string | null;
+  serviceDepartment: (DepartmentRef & { isActive: boolean }) | null;
   isActive: boolean;
   mustChangePassword: boolean;
   createdAt: string;
@@ -349,6 +360,8 @@ export interface MemberDashboard {
   counts: { pending: number; upcomingApproved: number; history: number };
   nextBooking: BookingSummary | null;
   recentBookings: BookingSummary[];
+  complaints: { open: number; awaitingYourReview: number };
+  recentComplaints: ComplaintSummary[];
 }
 
 export interface AdminDashboard {
@@ -362,6 +375,8 @@ export interface AdminDashboard {
     activeMembers: number;
     approvalRate30d: number;
   };
+  complaintKpis: ComplaintKpis;
+  complaintsNeedingReassignment: ComplaintSummary[];
   needsAttention: AdminBookingListItem[];
   todaySchedule: AdminBookingListItem[];
   upcomingBlocks: VenueBlock[];

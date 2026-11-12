@@ -44,7 +44,7 @@ const schema = z
     EMAIL_TRANSPORT: z.enum(['brevo', 'file', 'console']).default('console'),
     BREVO_API_KEY: optional,
     EMAIL_FROM_ADDRESS: optional,
-    EMAIL_FROM_NAME: z.string().default('CampusHub Venue Booking'),
+    EMAIL_FROM_NAME: z.string().default('CampusHub'),
     EMAIL_REPLY_TO: optional,
     EMAIL_OUTBOX_DIR: z.string().default('.tmp/outbox'),
     VAPID_PUBLIC_KEY: optional,
@@ -60,6 +60,10 @@ const schema = z
     AWS_ACCESS_KEY_ID: optional,
     AWS_SECRET_ACCESS_KEY: optional,
     NEON_STORAGE_BUCKET: z.string().default('venue-photos'),
+    // Complaint photos (COMPLAINT_REGISTRATION_SPEC.md §12): a PRIVATE bucket read through short-lived signed URLs.
+    // Defaults to Neon unless venue photos use the local fake store; 'fake' is refused in production.
+    COMPLAINT_PHOTO_STORE: z.enum(['neon', 'fake']).optional(),
+    NEON_COMPLAINT_BUCKET: z.string().default('complaint-photos'),
     NEON_BRANCH: optional, // informational; written by `npm run neon:env`, used by the dev seed guard
     CRON_SECRET: z.string().min(32, 'CRON_SECRET must be at least 32 characters'),
   })
@@ -70,9 +74,13 @@ const schema = z
     if (v.NODE_ENV === 'production' && v.IMAGE_STORE === 'fake') {
       ctx.addIssue({ code: 'custom', path: ['IMAGE_STORE'], message: 'IMAGE_STORE=fake is refused in production' });
     }
-    if (v.IMAGE_STORE === 'neon') {
+    const photoStore = v.COMPLAINT_PHOTO_STORE ?? (v.IMAGE_STORE === 'fake' ? 'fake' : 'neon');
+    if (v.NODE_ENV === 'production' && photoStore === 'fake') {
+      ctx.addIssue({ code: 'custom', path: ['COMPLAINT_PHOTO_STORE'], message: 'COMPLAINT_PHOTO_STORE=fake is refused in production' });
+    }
+    if (v.IMAGE_STORE === 'neon' || photoStore === 'neon') {
       for (const key of ['AWS_ENDPOINT_URL_S3', 'AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'] as const) {
-        if (!v[key]) ctx.addIssue({ code: 'custom', path: [key], message: `IMAGE_STORE=neon needs ${key} (run \`neon env pull\`)` });
+        if (!v[key]) ctx.addIssue({ code: 'custom', path: [key], message: `Neon object storage needs ${key} (run \`neon env pull\`)` });
       }
     }
   });
@@ -84,7 +92,11 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-export const config = parsed.data;
+export const config = {
+  ...parsed.data,
+  /** Effective complaint photo store (COMPLAINT_PHOTO_STORE, or derived from IMAGE_STORE). */
+  COMPLAINT_PHOTO_STORE: parsed.data.COMPLAINT_PHOTO_STORE ?? (parsed.data.IMAGE_STORE === 'fake' ? ('fake' as const) : ('neon' as const)),
+};
 export type Config = typeof config;
 
 export const integrations = {

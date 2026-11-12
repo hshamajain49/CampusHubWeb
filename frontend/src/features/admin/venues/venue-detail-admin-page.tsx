@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
-import { CalendarClock, Construction, MapPin, MoreHorizontal, Pencil, Plus, Power, PowerOff, Trash2 } from 'lucide-react';
+import { CalendarClock, Construction, MapPin, Megaphone, MoreHorizontal, Pencil, Plus, Power, PowerOff, Trash2 } from 'lucide-react';
 import { BLOCK_TYPE_LABELS, VENUE_TYPE_LABELS, type AdminBookingListItem, type VenueBlock } from '@campushub/shared';
 import { isApiError } from '@/lib/api-client';
 import { formatDate, formatShortDay, formatTimeRange, formatNumber } from '@/lib/format';
@@ -23,6 +23,46 @@ import { BlockDialog } from '../blocks/block-dialog';
 import { BookingsTable } from '../bookings/bookings-page';
 import { DecisionDialog, type DecisionMode } from '../bookings/decision-dialogs';
 import { AdminCalendar } from '../calendar/admin-calendar-page';
+import { useAdminComplaints } from '@/features/complaints/api';
+import { ComplaintsTable } from '@/features/complaints/components/complaints-table';
+
+/** F-25: complaints linked to this venue (C15 filtered by venueId). */
+function IssuesTab({ venueId }: { venueId: string }) {
+  const [page, setPage] = React.useState(1);
+  const [open, setOpen] = React.useState(true);
+  const list = useAdminComplaints({ venueId, page, pageSize: 10, status: open ? ['pending_review', 'in_progress', 'awaiting_confirmation'] : undefined });
+  return (
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label className="flex items-center gap-2 text-sm font-medium text-ink">
+          <Switch checked={open} onCheckedChange={(v) => {
+            setOpen(v);
+            setPage(1);
+          }} aria-label="Open issues only" /> Open issues only
+        </label>
+        <Button asChild variant="outline" size="sm">
+          <Link to={`/admin/complaints?venueId=${venueId}`}>Open in complaints console</Link>
+        </Button>
+      </div>
+      {list.isLoading ? (
+        <Skeleton className="h-40 rounded-[14px]" />
+      ) : list.isError ? (
+        <div className="card">
+          <ErrorState onRetry={() => list.refetch()} />
+        </div>
+      ) : list.data!.data.length === 0 ? (
+        <div className="card">
+          <EmptyState compact icon={Megaphone} tone="teal" title={open ? 'No open issues.' : 'No issues reported for this venue.'} />
+        </div>
+      ) : (
+        <>
+          <ComplaintsTable rows={list.data!.data} viewer="admin" linkTo={(c) => `/admin/complaints/${c.id}`} />
+          <Pagination page={page} pageSize={10} total={list.data!.meta.total} onPage={setPage} />
+        </>
+      )}
+    </div>
+  );
+}
 
 function BlocksTab({ venueId, onAdd, onEdit }: { venueId: string; onAdd: () => void; onEdit: (b: VenueBlock) => void }) {
   const [includePast, setIncludePast] = React.useState(false);
@@ -228,6 +268,10 @@ export default function VenueDetailAdminPage() {
           <TabsTrigger value="blocks">Blocks</TabsTrigger>
           <TabsTrigger value="bookings">Bookings</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="issues">
+            Issues
+            {v.stats.openComplaints > 0 && <span className="tabular rounded-full bg-warning px-1.5 text-[11px] font-bold text-white">{v.stats.openComplaints}</span>}
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="mt-5 grid gap-5 outline-none">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -290,6 +334,9 @@ export default function VenueDetailAdminPage() {
         </TabsContent>
         <TabsContent value="calendar" className="mt-5 outline-none">
           <AdminCalendar lockedVenueId={v.id} />
+        </TabsContent>
+        <TabsContent value="issues" className="mt-5 outline-none">
+          <IssuesTab venueId={v.id} />
         </TabsContent>
       </Tabs>
 

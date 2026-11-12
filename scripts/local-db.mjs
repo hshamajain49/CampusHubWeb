@@ -32,6 +32,9 @@ function pgCtl() {
 function server(c) {
   return new EmbeddedPostgres({
     databaseDir: c.dir, user: USER, password: PASSWORD, port: c.port, persistent: true,
+    // UTF-8 like Neon; Windows initdb otherwise picks the ANSI codepage (WIN1252), which can't store emoji or
+    // non-Latin text. Applies to new clusters only (delete .localdb/ to recreate existing ones).
+    initdbFlags: ['--encoding=UTF8', '--locale=C'],
     onLog: () => {}, onError: (e) => { if (process.env.LOCALDB_VERBOSE) console.error(String(e)); },
   });
 }

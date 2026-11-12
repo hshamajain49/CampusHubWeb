@@ -6,7 +6,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export const API_ORIGIN: string = (import.meta.env.VITE_API_ORIGIN as string | undefined) ?? 'http://localhost:4000';
-export const APP_NAME: string = (import.meta.env.VITE_APP_NAME as string | undefined) ?? 'CampusHub Venue Booking';
+export const APP_NAME: string = (import.meta.env.VITE_APP_NAME as string | undefined) ?? 'CampusHub';
 
 const SUFFIXES = new Set(['jr', 'jr.', 'sr', 'sr.', 'ii', 'iii', 'iv', 'v', 'phd', 'md']);
 const segmenter = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;

@@ -11,6 +11,11 @@ export interface AppSettings extends BookingRules {
   emailNotificationsEnabled: boolean;
   emailDailyLimit: number;
   reminderLeadMinutes: number;
+  /** null = auto-resolve off (CD-03). */
+  complaintAutoResolveDays: number | null;
+  /** 0 = reporters can't reopen auto-resolved complaints. */
+  complaintReopenWindowDays: number;
+  complaintMaxOpenPerUser: number;
   updatedAt: Date;
   updatedById: string | null;
 }
@@ -42,6 +47,9 @@ export function mapSettingsRow(r: any): AppSettings {
     emailNotificationsEnabled: r.email_notifications_enabled,
     emailDailyLimit: r.email_daily_limit,
     reminderLeadMinutes: r.reminder_lead_minutes,
+    complaintAutoResolveDays: r.complaint_auto_resolve_days ?? null,
+    complaintReopenWindowDays: r.complaint_reopen_window_days ?? 7,
+    complaintMaxOpenPerUser: r.complaint_max_open_per_user ?? 10,
     updatedAt: r.updated_at,
     updatedById: r.updated_by,
   };

@@ -1,9 +1,19 @@
 // Admin user management E37–E43 with algorithms I (deactivate) and J (activate).
-import { domainAllowed, domainRestrictionMessage, type CreateUserBody, type UpdateUserBody, type UserDetail, type UserListItem } from '@campushub/shared';
+import {
+  domainAllowed,
+  domainRestrictionMessage,
+  ROLE_LABELS,
+  type CreateUserBody,
+  type Role,
+  type UpdateUserBody,
+  type UserDetail,
+  type UserListItem,
+} from '@campushub/shared';
 import { pool } from '../../db/pool.js';
 import { withTransaction } from '../../db/transaction.js';
 import { likePattern, listMeta, offsetOf, Where } from '../../db/sql.js';
-import { appError } from '../../errors/app-error.js';
+import { appError, validationError } from '../../errors/app-error.js';
+import type { DbClient } from '../../db/pool.js';
 import type { Actor } from '../../middleware/authenticate.js';
 import { loadCampus } from '../../domain/settings.js';
 import { createCredentialUser, hashPassword, revokeSessions, sendPasswordReset } from '../../lib/auth-accounts.js';
@@ -25,6 +35,7 @@ function baseUser(r: any) {
     email: r.email,
     role: r.role,
     department: r.department,
+    serviceDepartment: r.service_department_id ? { id: r.service_department_id, name: r.sd_name, isActive: !!r.sd_active } : null,
     isActive: r.is_active,
     mustChangePassword: r.must_change_password,
     createdAt: iso(r.created_at)!,
@@ -32,9 +43,37 @@ function baseUser(r: any) {
   };
 }
 
+/** Joined into every user query: the service department of department_staff accounts. */
+const SD_JOIN = 'left join public.service_departments sd on sd.id = p.service_department_id';
+
+/**
+ * The service department a role needs (E38/E40, CEC-18): department_staff requires an active one; every other role
+ * has none, and sending one is an error.
+ */
+async function serviceDepartmentFor(db: DbClient, role: Role, requested: string | null | undefined, current: string | null = null) {
+  if (role !== 'department_staff') {
+    if (requested) throw validationError({ serviceDepartmentId: ['Only department staff belong to a service department.'] });
+    return null;
+  }
+  const id = requested !== undefined ? requested : current;
+  if (!id) throw appError('SERVICE_DEPARTMENT_REQUIRED', undefined, { field: 'serviceDepartmentId' });
+  if (id === current) return id;
+  const { rows } = await db.query<{ is_active: boolean }>('select is_active from public.service_departments where id = $1', [id]);
+  if (!rows[0]?.is_active) throw appError('SERVICE_DEPARTMENT_REQUIRED', 'Choose an active department.', { field: 'serviceDepartmentId' });
+  return id;
+}
+
 const SORTS: Record<string, string> = { 'createdAt:desc': 'p.created_at desc', 'name:asc': 'lower(p.full_name) asc' };
 
-export async function listUsers(q: { q?: string; role?: string; isActive?: boolean; sort: string; page: number; pageSize: number }) {
+export async function listUsers(q: {
+  q?: string;
+  role?: string;
+  serviceDepartmentId?: string;
+  isActive?: boolean;
+  sort: string;
+  page: number;
+  pageSize: number;
+}) {
   const campus = await loadCampus(pool);
   const w = new Where();
   if (q.q) {
@@ -42,6 +81,7 @@ export async function listUsers(q: { q?: string; role?: string; isActive?: boole
     w.add(`(p.full_name ilike ${like} or p.email ilike ${like})`);
   }
   if (q.role) w.add('p.role = $?', q.role);
+  if (q.serviceDepartmentId) w.add('p.service_department_id = $?', q.serviceDepartmentId);
   if (q.isActive !== undefined) w.add('p.is_active = $?', q.isActive);
   const where = w.sql();
   const total = (await pool.query<{ n: number }>(`select count(*) as n from public.profiles p ${where}`, w.params)).rows[0]!.n;
@@ -49,7 +89,8 @@ export async function listUsers(q: { q?: string; role?: string; isActive?: boole
   const limit = w.param(q.pageSize);
   const offset = w.param(offsetOf(q.page, q.pageSize));
   const { rows } = await pool.query(
-    `select p.*, ${COUNTS.replaceAll('$NOW', nowP)} from public.profiles p ${where}
+    `select p.*, sd.name as sd_name, sd.is_active as sd_active, ${COUNTS.replaceAll('$NOW', nowP)}
+       from public.profiles p ${SD_JOIN} ${where}
       order by ${SORTS[q.sort] ?? SORTS['createdAt:desc']}, p.id limit ${limit} offset ${offset}`,
     w.params,
   );
@@ -68,8 +109,9 @@ export async function getUser(actor: Actor, id: string): Promise<UserDetail> {
             (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'approved') as approved,
             (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'rejected') as rejected,
             (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'cancelled') as cancelled,
-            (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'expired') as expired
-       from public.profiles p where p.id = $1`,
+            (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'expired') as expired,
+            sd.name as sd_name, sd.is_active as sd_active
+       from public.profiles p ${SD_JOIN} where p.id = $1`,
     [id, now],
   );
   const r = rows[0];
@@ -102,20 +144,21 @@ export async function createUser(actor: Actor, body: CreateUserBody): Promise<Us
   if (!domainAllowed(body.email, settings.allowedEmailDomains)) {
     throw appError('EMAIL_DOMAIN_NOT_ALLOWED', domainRestrictionMessage(settings.allowedEmailDomains), { field: 'email' });
   }
+  const serviceDepartmentId = await serviceDepartmentFor(pool, body.role, body.serviceDepartmentId);
   const hash = await hashPassword(body.temporaryPassword);
   const id = await withTransaction({ actorId: actor.id }, async (tx) => {
     const userId = await createCredentialUser(tx, { email: body.email, name: body.fullName, passwordHash: hash });
-    await tx.query('update public.profiles set role = $2, department = $3, must_change_password = true where id = $1', [
-      userId,
-      body.role,
-      body.department ?? null,
-    ]);
+    // Role and service department change together: profiles_staff_department requires both or neither.
+    await tx.query(
+      'update public.profiles set role = $2, department = $3, service_department_id = $4, must_change_password = true where id = $1',
+      [userId, body.role, body.department ?? null, serviceDepartmentId],
+    );
     await audit(tx, actor, {
       action: 'user.created',
       entityType: 'user',
       entityId: userId,
-      summary: `Created ${body.role === 'student' ? 'student' : 'faculty/staff'} account ${body.email}`,
-      metadata: { role: body.role },
+      summary: `Created ${ROLE_LABELS[body.role].toLowerCase()} account ${body.email}`,
+      metadata: { role: body.role, serviceDepartmentId },
     });
     return userId;
   });
@@ -136,10 +179,12 @@ export async function updateUser(actor: Actor, id: string, body: UpdateUserBody)
     const t = await lockEditableTarget(tx, actor, id);
     const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};
+    const role: Role = body.role ?? t.role;
     const next = {
       full_name: body.fullName ?? t.full_name,
-      role: body.role ?? t.role,
+      role,
       department: body.department !== undefined ? body.department : t.department,
+      service_department_id: await serviceDepartmentFor(tx, role, body.serviceDepartmentId, t.service_department_id),
     };
     for (const [k, v] of Object.entries(next)) {
       if (t[k] === v) continue;
@@ -147,11 +192,12 @@ export async function updateUser(actor: Actor, id: string, body: UpdateUserBody)
       after[k] = v;
     }
     if (!Object.keys(after).length) return;
-    await tx.query('update public.profiles set full_name = $2, role = $3, department = $4 where id = $1', [
+    await tx.query('update public.profiles set full_name = $2, role = $3, department = $4, service_department_id = $5 where id = $1', [
       id,
       next.full_name,
       next.role,
       next.department,
+      next.service_department_id,
     ]);
     await audit(tx, actor, { action: 'user.updated', entityType: 'user', entityId: id, summary: `Updated ${t.email}`, metadata: { before, after } });
   });

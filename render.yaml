@@ -25,7 +25,7 @@ services:
       - key: EMAIL_TRANSPORT
         value: brevo
       - key: EMAIL_FROM_NAME
-        value: CampusHub Venue Booking
+        value: CampusHub
       - key: IMAGE_STORE
         value: neon # Neon Object Storage, bucket declared in neon.ts
       - key: NEON_STORAGE_BUCKET

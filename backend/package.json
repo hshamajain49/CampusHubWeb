@@ -13,10 +13,12 @@
     "create-super-admin": "tsx src/scripts/create-super-admin.ts",
     "seed:dev": "node ../scripts/with-node-env.mjs development tsx src/scripts/seed-dev.ts",
     "seed:if-empty": "node ../scripts/with-node-env.mjs development tsx src/scripts/seed-dev.ts --if-empty",
-    "auth:check": "npx @better-auth/cli generate --config src/lib/auth.ts"
+    "auth:check": "npx @better-auth/cli generate --config src/lib/auth.ts",
+    "storage:sweep": "node ../scripts/with-node-env.mjs development tsx src/scripts/storage-sweep.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1164.0",
+    "@aws-sdk/s3-request-presigner": "^3.1164.0",
     "@campushub/shared": "*",
     "ably": "^2.14.0",
     "better-auth": "^1.7.18",

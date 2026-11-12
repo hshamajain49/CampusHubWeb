@@ -108,7 +108,7 @@ jobs:
           BETTER_AUTH_SECRET=$(secret)
           BETTER_AUTH_URL=http://localhost:4000
           EMAIL_TRANSPORT=file
-          EMAIL_FROM_NAME=CampusHub Venue Booking
+          EMAIL_FROM_NAME=CampusHub
           EMAIL_OUTBOX_DIR=.tmp/outbox
           VAPID_SUBJECT=mailto:ci@example.com
           IMAGE_STORE=fake

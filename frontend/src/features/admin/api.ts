@@ -192,7 +192,15 @@ export function useBlockMutations() {
 }
 
 // ─────────────── Users ───────────────
-export function useUsers(params: { q?: string; role?: string; isActive?: boolean; sort?: string; page?: number; pageSize?: number }) {
+export function useUsers(params: {
+  q?: string;
+  role?: string;
+  serviceDepartmentId?: string;
+  isActive?: boolean;
+  sort?: string;
+  page?: number;
+  pageSize?: number;
+}) {
   return useQuery({
     queryKey: ['admin', 'users', params],
     queryFn: () => apiFetchList<UserListItem>('/admin/users', { query: params }),

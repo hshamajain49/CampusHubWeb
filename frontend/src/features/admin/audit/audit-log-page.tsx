@@ -25,6 +25,9 @@ const ENTITY = [
   { value: 'user', label: 'User' },
   { value: 'settings', label: 'Settings' },
   { value: 'system', label: 'System' },
+  { value: 'complaint', label: 'Complaint' },
+  { value: 'service_department', label: 'Service department' },
+  { value: 'complaint_category', label: 'Complaint category' },
 ];
 const ACTIONS = [
   { value: 'all', label: 'All actions' },
@@ -33,6 +36,9 @@ const ACTIONS = [
   { value: 'venue_block.', label: 'Venue blocks' },
   { value: 'user.', label: 'User changes' },
   { value: 'settings.', label: 'Settings' },
+  { value: 'complaint.', label: 'Complaint actions' },
+  { value: 'service_department.', label: 'Departments' },
+  { value: 'complaint_category.', label: 'Complaint categories' },
 ];
 
 function entityLink(e: AuditLogEntry): string | null {
@@ -41,6 +47,9 @@ function entityLink(e: AuditLogEntry): string | null {
   if (e.entityType === 'venue') return e.action === 'venue.deleted' ? null : `/admin/venues/${e.entityId}`;
   if (e.entityType === 'user') return `/admin/users/${e.entityId}`;
   if (e.entityType === 'settings') return '/admin/settings';
+  if (e.entityType === 'complaint') return `/admin/complaints/${e.entityId}`;
+  if (e.entityType === 'service_department') return '/admin/complaint-setup?tab=departments';
+  if (e.entityType === 'complaint_category') return '/admin/complaint-setup?tab=categories';
   return null;
 }
 
@@ -54,6 +63,7 @@ export default function AuditLogPage() {
   const page = Number(get('page') || 1);
   const q = useAuditLogs({
     entityType: get('entityType') || undefined,
+    entityId: get('entityId') || undefined,
     action: get('action') || undefined,
     actorId: get('actorId') || undefined,
     from: get('from') || undefined,
@@ -65,7 +75,7 @@ export default function AuditLogPage() {
     setParams(patchParams(params, patch), { replace: true });
   };
   const tz = settings?.campusTimezone ?? 'UTC';
-  const any = ['entityType', 'action', 'actorId', 'from', 'to'].some((k) => get(k));
+  const any = ['entityType', 'entityId', 'action', 'actorId', 'from', 'to'].some((k) => get(k));
 
   return (
     <div>

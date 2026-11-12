@@ -15,7 +15,7 @@ const testing = config.NODE_ENV === 'test' && process.env.RATE_LIMIT_TESTS !== '
 const f = config.NODE_ENV === 'production' ? 1 : 10;
 
 export const auth = betterAuth({
-  appName: 'CampusHub Venue Booking',
+  appName: 'CampusHub',
   baseURL: config.BETTER_AUTH_URL,
   basePath: '/api/auth',
   secret: config.BETTER_AUTH_SECRET,

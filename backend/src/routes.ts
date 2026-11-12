@@ -1,7 +1,30 @@
 // Every /api/v1 router with its guard chain (§10.2 step 11). Thin controllers: HTTP ↔ service calls only.
 import { Router, type Express, type RequestHandler } from 'express';
 import {
+  MEMBER_ROLES,
   ROLES,
+  adminCloseBody,
+  adminComplaintsExportQuery,
+  adminComplaintsQuery,
+  adminReassignBody,
+  categoryCreateBody,
+  categoryIdParam,
+  categoryUpdateBody,
+  completeWorkData,
+  complaintCreateData,
+  complaintIdParam,
+  complaintRejectBody,
+  complaintReportsQuery,
+  complaintReporterReopenBody,
+  complaintVersionBody,
+  complaintWithdrawBody,
+  departmentCreateBody,
+  departmentIdParam,
+  departmentUpdateBody,
+  myComplaintsQuery,
+  requestReassignmentBody,
+  staffComplaintsQuery,
+  staffNoteBody,
   adminBookingsQuery,
   adminCancelBody,
   adminExportQuery,
@@ -47,6 +70,8 @@ import { actorOf, authenticate, guard, loadProfile, requireActive } from './midd
 import { validate } from './middleware/validate.js';
 import { limits } from './middleware/rate-limiters.js';
 import { uploadImage } from './middleware/upload-image.js';
+import { photosOf, uploadPhotos } from './middleware/upload.js';
+import { requireServiceDepartment } from './middleware/require-service-department.js';
 import { appError } from './errors/app-error.js';
 import { pool } from './db/pool.js';
 import { loadCampus } from './domain/settings.js';
@@ -64,8 +89,15 @@ import * as reports from './modules/reports/reports.service.js';
 import * as dashboard from './modules/admin-dashboard/admin-dashboard.service.js';
 import * as notifications from './modules/notifications/notifications.service.js';
 import { maybeRunExpiry } from './modules/jobs/jobs.service.js';
+import * as complaints from './modules/complaints/complaints.service.js';
+import * as staff from './modules/staff-complaints/staff-complaints.service.js';
+import * as adminComplaints from './modules/admin-complaints/admin-complaints.service.js';
+import * as complaintSetup from './modules/complaint-setup/complaint-setup.service.js';
+import * as complaintReports from './modules/complaint-reports/complaint-reports.service.js';
 
-const MEMBERS: Role[] = ['student', 'faculty_staff'];
+/** Members (student, faculty_staff, department_staff) use venues and bookings (COMPLAINT_REGISTRATION_SPEC.md CD-02). */
+const MEMBERS: Role[] = [...MEMBER_ROLES];
+const STAFF: Role[] = ['department_staff'];
 const ADMINS: Role[] = ['super_admin'];
 const ANY: Role[] = [...ROLES];
 
@@ -211,6 +243,99 @@ function bookingsRouter() {
   return r;
 }
 
+// ───────────────────────────── complaints: reporter (any role, §11.2 C01–C07, C30) ─────────────────────────────
+type Req = Parameters<RequestHandler>[0];
+type Res = Parameters<RequestHandler>[1];
+
+function idempotencyKeyOf(req: Req): string | null {
+  const key = idempotencyKey.safeParse(req.get('idempotency-key') || undefined);
+  if (!key.success) throw appError('VALIDATION_ERROR', 'Idempotency-Key must be a UUID', { fieldErrors: {}, formErrors: [] });
+  return key.data ?? null;
+}
+
+function complaintCategoriesRouter() {
+  const r = Router();
+  r.use(...guard({ roles: ANY }));
+  r.get('/', async (_req, res) => void res.json({ data: await complaints.listActiveCategories() }));
+  return r;
+}
+
+function complaintsRouter() {
+  const r = Router();
+  r.use(...guard({ roles: ANY }), opportunisticExpiry);
+  r.post('/', limits.complaintCreate, uploadPhotos, validate({ body: complaintCreateData }), async (req, res) => {
+    const { complaint, replay } = await complaints.createComplaint(actorOf(req), req.valid.body, photosOf(req), idempotencyKeyOf(req));
+    if (replay) {
+      res.setHeader('Idempotent-Replay', 'true');
+      return void res.status(200).json({ data: complaint });
+    }
+    res.setHeader('Location', `/api/v1/complaints/${complaint.id}`);
+    res.status(201).json({ data: complaint });
+  });
+  r.get('/', validate({ query: myComplaintsQuery }), async (req, res) => void res.json(await complaints.listMyComplaints(req.profile!.id, req.valid.query)));
+  r.get('/:complaintId', validate({ params: complaintIdParam }), async (req, res) => {
+    res.json({ data: await complaints.getMyComplaint(req.profile!.id, req.valid.params.complaintId) });
+  });
+  r.post('/:complaintId/approve', limits.complaintActions, validate({ params: complaintIdParam, body: complaintVersionBody }), async (req, res) => {
+    res.json({ data: await complaints.approveComplaint(actorOf(req), req.valid.params.complaintId, req.valid.body) });
+  });
+  r.post('/:complaintId/reject', limits.complaintActions, validate({ params: complaintIdParam, body: complaintRejectBody }), async (req, res) => {
+    res.json({ data: await complaints.rejectComplaint(actorOf(req), req.valid.params.complaintId, req.valid.body) });
+  });
+  r.post('/:complaintId/withdraw', limits.complaintActions, validate({ params: complaintIdParam, body: complaintWithdrawBody }), async (req, res) => {
+    res.json({ data: await complaints.withdrawComplaint(actorOf(req), req.valid.params.complaintId, req.valid.body) });
+  });
+  r.post('/:complaintId/reopen', limits.complaintActions, validate({ params: complaintIdParam, body: complaintReporterReopenBody }), async (req, res) => {
+    res.json({ data: await complaints.reporterReopenComplaint(actorOf(req), req.valid.params.complaintId, req.valid.body) });
+  });
+  return r;
+}
+
+// ───────────────────────────── complaints: department staff (§11.2 C08–C14) ─────────────────────────────
+function staffRouter() {
+  const r = Router();
+  r.use(...guard({ roles: STAFF }), requireServiceDepartment, opportunisticExpiry);
+  const dept = (req: Req) => req.serviceDepartment!;
+  const scope = (req: Req) => ({ kind: 'staff' as const, departmentId: dept(req).id });
+  const reply = async (req: Req, res: Res) =>
+    void res.json({ data: await staff.getDepartmentComplaint(dept(req).id, req.valid.params.complaintId) });
+
+  r.get('/dashboard', async (req, res) => void res.json({ data: await staff.staffDashboard(dept(req)) }));
+  r.get('/complaints', validate({ query: staffComplaintsQuery }), async (req, res) => {
+    res.json(await staff.listDepartmentComplaints(dept(req).id, req.valid.query));
+  });
+  r.get('/complaints/:complaintId', validate({ params: complaintIdParam }), reply);
+  r.post('/complaints/:complaintId/start', limits.complaintActions, validate({ params: complaintIdParam, body: staffNoteBody }), async (req, res) => {
+    await staff.startWork(actorOf(req), scope(req), req.valid.params.complaintId, req.valid.body);
+    await reply(req, res);
+  });
+  r.post(
+    '/complaints/:complaintId/complete',
+    limits.workComplete,
+    validate({ params: complaintIdParam }),
+    uploadPhotos,
+    validate({ body: completeWorkData }),
+    async (req, res) => {
+      await staff.completeWork(actorOf(req), scope(req), req.valid.params.complaintId, req.valid.body, photosOf(req));
+      await reply(req, res);
+    },
+  );
+  r.post('/complaints/:complaintId/reopen', limits.complaintActions, validate({ params: complaintIdParam, body: staffNoteBody }), async (req, res) => {
+    await staff.reopenWork(actorOf(req), scope(req), req.valid.params.complaintId, req.valid.body);
+    await reply(req, res);
+  });
+  r.post(
+    '/complaints/:complaintId/request-reassignment',
+    limits.complaintActions,
+    validate({ params: complaintIdParam, body: requestReassignmentBody }),
+    async (req, res) => {
+      await staff.requestReassignment(actorOf(req), dept(req).id, req.valid.params.complaintId, req.valid.body);
+      await reply(req, res);
+    },
+  );
+  return r;
+}
+
 // ───────────────────────────── admin ─────────────────────────────
 function adminRouter() {
   const r = Router();
@@ -303,6 +428,62 @@ function adminRouter() {
   });
 
   r.get('/reports/summary', validate({ query: reportsQuery }), async (req, res) => void res.json({ data: await reports.reportSummary(req.valid.query) }));
+
+  // Complaints (COMPLAINT_REGISTRATION_SPEC.md §11.2 C15–C29). Admins file their own complaints through C02.
+  r.get('/complaints', validate({ query: adminComplaintsQuery }), async (req, res) => {
+    res.json(await adminComplaints.listAdminComplaints(actorOf(req), req.valid.query));
+  });
+  r.get('/complaints/export.csv', limits.exports, validate({ query: adminComplaintsExportQuery }), async (req, res) => {
+    const { csv, filename } = await adminComplaints.exportComplaintsCsv(actorOf(req), req.valid.query);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  });
+  const adminDetail = async (req: Req, res: Res) =>
+    void res.json({ data: await adminComplaints.getAdminComplaint(actorOf(req), req.valid.params.complaintId) });
+  r.get('/complaints/:complaintId', validate({ params: complaintIdParam }), adminDetail);
+  r.post('/complaints/:complaintId/start', validate({ params: complaintIdParam, body: staffNoteBody }), async (req, res) => {
+    await staff.startWork(actorOf(req), { kind: 'admin' }, req.valid.params.complaintId, req.valid.body);
+    await adminDetail(req, res);
+  });
+  r.post(
+    '/complaints/:complaintId/complete',
+    limits.workComplete,
+    validate({ params: complaintIdParam }),
+    uploadPhotos,
+    validate({ body: completeWorkData }),
+    async (req, res) => {
+      await staff.completeWork(actorOf(req), { kind: 'admin' }, req.valid.params.complaintId, req.valid.body, photosOf(req));
+      await adminDetail(req, res);
+    },
+  );
+  r.post('/complaints/:complaintId/reopen', validate({ params: complaintIdParam, body: staffNoteBody }), async (req, res) => {
+    await staff.reopenWork(actorOf(req), { kind: 'admin' }, req.valid.params.complaintId, req.valid.body);
+    await adminDetail(req, res);
+  });
+  r.post('/complaints/:complaintId/reassign', validate({ params: complaintIdParam, body: adminReassignBody }), async (req, res) => {
+    res.json({ data: await adminComplaints.reassignComplaint(actorOf(req), req.valid.params.complaintId, req.valid.body) });
+  });
+  r.post('/complaints/:complaintId/close', validate({ params: complaintIdParam, body: adminCloseBody }), async (req, res) => {
+    res.json({ data: await adminComplaints.closeComplaint(actorOf(req), req.valid.params.complaintId, req.valid.body) });
+  });
+  r.get('/service-departments', async (_req, res) => void res.json({ data: await complaintSetup.listDepartments() }));
+  r.post('/service-departments', validate({ body: departmentCreateBody }), async (req, res) => {
+    res.status(201).json({ data: await complaintSetup.createDepartment(actorOf(req), req.valid.body) });
+  });
+  r.patch('/service-departments/:departmentId', validate({ params: departmentIdParam, body: departmentUpdateBody }), async (req, res) => {
+    res.json({ data: await complaintSetup.updateDepartment(actorOf(req), req.valid.params.departmentId, req.valid.body) });
+  });
+  r.get('/complaint-categories', async (_req, res) => void res.json({ data: await complaintSetup.listAdminCategories() }));
+  r.post('/complaint-categories', validate({ body: categoryCreateBody }), async (req, res) => {
+    res.status(201).json({ data: await complaintSetup.createCategory(actorOf(req), req.valid.body) });
+  });
+  r.patch('/complaint-categories/:categoryId', validate({ params: categoryIdParam, body: categoryUpdateBody }), async (req, res) => {
+    res.json({ data: await complaintSetup.updateCategory(actorOf(req), req.valid.params.categoryId, req.valid.body) });
+  });
+  r.get('/reports/complaints', validate({ query: complaintReportsQuery }), async (req, res) => {
+    res.json({ data: await complaintReports.complaintReport(req.valid.query) });
+  });
   r.get('/settings', async (_req, res) => void res.json({ data: await settings.adminSettings() }));
   r.patch('/settings', validate({ body: settingsUpdateBody }), async (req, res) => {
     res.json({ data: await settings.updateSettings(actorOf(req), req.valid.body) });
@@ -326,6 +507,9 @@ export function mountRoutes(app: Express) {
     { path: '/api/v1/realtime', router: realtimeRouter(), roles: ANY },
     { path: '/api/v1/venues', router: venuesRouter(), roles: MEMBERS },
     { path: '/api/v1/bookings', router: bookingsRouter(), roles: MEMBERS },
+    { path: '/api/v1/complaint-categories', router: complaintCategoriesRouter(), roles: ANY },
+    { path: '/api/v1/complaints', router: complaintsRouter(), roles: ANY },
+    { path: '/api/v1/staff', router: staffRouter(), roles: STAFF },
     { path: '/api/v1/admin', router: adminRouter(), roles: ADMINS },
   ];
   // Startup self-check: only the explicitly public router may lack a role list.

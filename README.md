@@ -1,8 +1,12 @@
-# CampusHub Venue Booking
+# CampusHub
 
-Students and faculty request campus venues (seminar halls, labs, auditoriums); a Super Admin reviews, approves
-or rejects them. Bookings are conflict-free by construction: PostgreSQL exclusion constraints make double-booking
-impossible even under concurrent requests.
+Venue booking and complaint registration for a campus.
+
+- **Venue booking.** Students, faculty and department staff request campus venues (seminar halls, labs,
+  auditoriums); a Super Admin reviews, approves or rejects them. Bookings are conflict-free by construction:
+  PostgreSQL exclusion constraints make double-booking impossible even under concurrent requests.
+- **Complaints.** Anyone reports a campus problem (a broken fan, no Wi-Fi). The category routes it to a service
+  department, whose staff do the work; the reporter approves the fix or sends it back. See [Complaints](#complaints).
 
 | Layer | Stack |
 |---|---|
@@ -38,6 +42,8 @@ Demo accounts (seeded):
 | Super Admin | `admin@demo.edu` | `Admin12345` (sign in at `/admin/login`) |
 | Student | `student@demo.edu` | `Student12345` |
 | Faculty/Staff | `faculty@demo.edu` | `Faculty12345` |
+| Department Staff (Electrical) | `staff.electrical@demo.edu` | `Staff12345` |
+| Department Staff (Plumbing) | `staff.plumbing@demo.edu` | `Staff12345` |
 
 Locally, email goes to `backend/.tmp/outbox/*.html` (`EMAIL_TRANSPORT=file`). Realtime and push stay off until you add
 Ably/VAPID keys; the app polls instead.
@@ -84,6 +90,32 @@ Stop the embedded clusters with `npm run db:local:stop`.
 | `npm run db:dump` | `pg_dump` of the configured database into `backups/` |
 | `npm run create-super-admin -w @campushub/backend` | Provision a Super Admin account from the command line (on the database in `backend/.env`) |
 | `npm run create-super-admin:prod -- --email … --name "…"` | The same on the Neon **production** branch, using `.env.production.local` |
+| `npm run storage:sweep -w @campushub/backend` | Delete complaint photos older than 24 h that no complaint references (`-- --dry-run` to preview) |
+
+## Complaints
+
+Implemented from `COMPLAINT_REGISTRATION_SPEC.md` v1.1; stack adaptations and deviations are in
+[docs/COMPLAINTS.md](docs/COMPLAINTS.md).
+
+| Role | What they do | Where |
+|---|---|---|
+| Any signed-in user | File a complaint (category, title, optional venue/location/description, up to 3 photos), track it, approve or reject the fix, withdraw before work starts, reopen an auto-resolved one within the window | `/complaints` |
+| Department Staff | Work their department's queue: start, mark done (note + "after" photos), reopen, request reassignment; also book venues | `/staff` |
+| Super Admin | All complaints (filters, CSV), reassign, close, act for any department, departments & categories, reports | `/admin/complaints`, `/admin/complaint-setup` |
+
+- **Routing**: the category decides the department (7 departments/categories seeded from the Flutter app; managed
+  under Departments & categories). Staff accounts are created in Users with role *Department Staff* and a service
+  department.
+- **Lifecycle**: Pending Review → In Progress → Awaiting Approval → Resolved, plus Withdrawn and Closed (final). A
+  database trigger enforces the transitions; every change lands in the complaint timeline, admin actions also in the
+  audit log.
+- **Auto-resolve**: awaiting approval for 7 days → resolved by the job runner (`complaints` task); the reporter can
+  reopen an auto-resolved complaint for 7 days. Both are in Settings → Rules.
+- **Photos**: compressed in the browser, re-encoded to WebP by the API (EXIF/GPS removed), stored in the **private**
+  Neon bucket `complaint-photos`, and shown through 10-minute presigned URLs. Locally (`IMAGE_STORE=fake`) they go
+  to `backend/.tmp/private-files` behind signed `/dev-files` URLs.
+- **With venue booking**: complaints can name a venue; admin venue pages show an Issues tab; an admin can block a
+  venue for maintenance straight from a complaint about it.
 
 ## Project layout
 
@@ -127,6 +159,8 @@ action bars respect safe areas, and inputs are 16 px so iOS doesn't zoom.
   (changed at first sign-in). Don't prefix the plain `create-super-admin` with `DATABASE_URL=`: `backend/.env` wins
   over shell variables, so it would write to the dev branch. The app itself only creates students and faculty, so
   run this again for each extra Super Admin (an existing account's email is promoted instead).
+- **Complaint photos**: run `neon deploy` with the `production` branch pinned to create the private
+  `complaint-photos` bucket (`neon.ts`). The API uses the same `AWS_*` storage credentials as venue photos.
 - **Jobs**: cron-job.org calls `POST /internal/jobs/run` with `Authorization: Bearer <CRON_SECRET>` every 30 minutes
   by day and hourly at night; `GET /health` every 14 minutes during campus hours keeps the free instance awake.
 - **CI** (`.github/workflows/ci.yml`): lint/typecheck → unit → db → integration → e2e, a secrets scan of the built

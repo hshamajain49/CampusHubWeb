@@ -5,7 +5,7 @@ import { logger } from '../../lib/logger.js';
 import { loadCampus } from '../../domain/settings.js';
 import { deliver, publish } from '../notifications/notifier.js';
 
-export type JobTask = 'expire' | 'reminders' | 'deliveries' | 'housekeeping';
+export type JobTask = 'expire' | 'complaints' | 'reminders' | 'deliveries' | 'housekeeping';
 let running = false;
 let lastHousekeepingDay: string | null = null;
 let lastExpiryAt = 0;
@@ -20,11 +20,23 @@ export async function runExpiry(): Promise<number> {
   });
 }
 
+/**
+ * Complaint auto-resolve (COMPLAINT_REGISTRATION_SPEC.md CW-07, CB-18): awaiting_confirmation longer than
+ * complaint_auto_resolve_days → resolved, actor = system. Replaces the spec's pg_cron job.
+ */
+export async function runComplaintAutoResolve(): Promise<number> {
+  return withTransaction({ actorId: null }, async (tx) => {
+    const { rows } = await tx.query<{ n: number }>('select public.auto_resolve_complaints() as n');
+    return rows[0]!.n;
+  });
+}
+
 /** K2 (opportunistic): at most once a minute while the API serves authenticated requests. */
 export function maybeRunExpiry(): void {
   if (running || Date.now() - lastExpiryAt < 60_000) return;
   lastExpiryAt = Date.now();
   runExpiry().catch((err) => logger.warn({ err }, 'opportunistic expiry failed'));
+  runComplaintAutoResolve().catch((err) => logger.warn({ err }, 'opportunistic complaint auto-resolve failed'));
 }
 
 async function runReminders(): Promise<number> {
@@ -79,9 +91,10 @@ export async function runJobs(tasks: JobTask[]) {
   if (running) return { skipped: true };
   running = true;
   const started = Date.now();
-  const out = { expired: 0, reminders: 0, deliveriesRetried: 0, housekeeping: false, durationMs: 0 };
+  const out = { expired: 0, complaintsAutoResolved: 0, reminders: 0, deliveriesRetried: 0, housekeeping: false, durationMs: 0 };
   try {
     if (tasks.includes('expire')) out.expired = await runExpiry();
+    if (tasks.includes('complaints')) out.complaintsAutoResolved = await runComplaintAutoResolve();
     if (tasks.includes('reminders')) out.reminders = await runReminders();
     if (tasks.includes('deliveries')) out.deliveriesRetried = await runDeliveryRetries();
     if (tasks.includes('housekeeping')) out.housekeeping = await runHousekeeping();

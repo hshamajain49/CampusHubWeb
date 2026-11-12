@@ -43,7 +43,7 @@ export async function reportSummary(q: { from?: string; to?: string; venueId?: s
       `select p.role, count(*) as requests, count(*) filter (where b.status = 'approved') as approved
          from public.bookings b join public.profiles p on p.id = b.requester_id
         where b.booking_date between $1::date and $2::date and ($3::uuid is null or b.venue_id = $3)
-          and p.role in ('student','faculty_staff')
+          and p.role in ('student','faculty_staff','department_staff')
         group by p.role`,
       params,
     ),

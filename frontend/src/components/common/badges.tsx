@@ -1,4 +1,4 @@
-import { Ban, BriefcaseBusiness, CircleCheck, CircleX, GraduationCap, Hourglass, ShieldCheck, TimerOff } from 'lucide-react';
+import { Ban, BriefcaseBusiness, CircleCheck, CircleX, GraduationCap, Hourglass, ShieldCheck, TimerOff, Wrench } from 'lucide-react';
 import { ROLE_LABELS, STATUS_LABELS, type BookingStatus, type Role } from '@campushub/shared';
 import { cn } from '@/lib/utils';
 
@@ -32,6 +32,7 @@ export function StatusBadge({ status, className, size = 'md' }: { status: Bookin
 const ROLE: Record<Role, { cls: string; icon: typeof GraduationCap }> = {
   student: { cls: 'bg-primary-soft text-role-student', icon: GraduationCap },
   faculty_staff: { cls: 'bg-secondary-soft text-role-faculty', icon: BriefcaseBusiness },
+  department_staff: { cls: 'bg-[#FDEEDD] text-[#9A5410]', icon: Wrench },
   super_admin: { cls: 'bg-[#F1EBFE] text-role-admin', icon: ShieldCheck },
 };
 
@@ -58,4 +59,4 @@ export function Pill({ children, tone = 'neutral', className }: { children: Reac
   return <span className={cn('chip inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-semibold [&_svg]:size-3', tones[tone], className)}>{children}</span>;
 }
 
-export const roleColor: Record<Role, string> = { student: '#1E3A8A', faculty_staff: '#0F766E', super_admin: '#7C3AED' };
+export const roleColor: Record<Role, string> = { student: '#1E3A8A', faculty_staff: '#0F766E', department_staff: '#9A5410', super_admin: '#7C3AED' };

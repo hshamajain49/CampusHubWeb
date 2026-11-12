@@ -12,6 +12,12 @@ export const memberPages = {
   bookingSubmitted: () => import('@/features/bookings/booking-submitted-page'),
   profile: () => import('@/features/profile/profile-page'),
   notifications: () => import('@/features/notifications/notifications-page'),
+  complaints: () => import('@/features/complaints/complaint-pages'),
+};
+
+/** Department staff workspace (prefetched only for department_staff). */
+export const staffPages = {
+  staff: () => import('@/features/staff/staff-pages'),
 };
 
 export const authPages = {
@@ -36,6 +42,10 @@ export const adminPages = {
   reports: () => import('@/features/admin/reports/reports-page'),
   settings: () => import('@/features/admin/settings/settings-page'),
   audit: () => import('@/features/admin/audit/audit-log-page'),
+  complaints: () => import('@/features/admin/complaints/complaints-page'),
+  complaintDetail: () => import('@/features/admin/complaints/admin-complaint-detail-page'),
+  complaintNew: () => import('@/features/admin/complaints/admin-new-complaint-page'),
+  complaintSetup: () => import('@/features/admin/complaint-setup/complaint-setup-page'),
 };
 
 /** Warms the given page chunks once the browser is idle after the shell mounts. Skipped on Save-Data connections. */

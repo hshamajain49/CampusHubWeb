@@ -95,6 +95,9 @@ const RULE_KEYS: (keyof Settings)[] = [
   'cancellationCutoffMinutes',
   'modificationCutoffMinutes',
   'maxPendingPerUser',
+  'complaintAutoResolveDays',
+  'complaintReopenWindowDays',
+  'complaintMaxOpenPerUser',
 ];
 
 function BookingRulesTab({ s }: { s: Settings }) {
@@ -123,6 +126,57 @@ function BookingRulesTab({ s }: { s: Settings }) {
           <NumberField label="Minimum lead time" hint="Bookings must start later than now + this." unit="minutes" echo={echo(d.minLeadTimeMinutes)} value={d.minLeadTimeMinutes} onChange={(v) => f.set('minLeadTimeMinutes', v)} error={f.errors.minLeadTimeMinutes} min={0} max={20160} />
           <NumberField label="Cancellation cut-off" hint="Members may cancel an approved booking until start − this." unit="minutes before start" echo={echo(d.cancellationCutoffMinutes)} value={d.cancellationCutoffMinutes} onChange={(v) => f.set('cancellationCutoffMinutes', v)} error={f.errors.cancellationCutoffMinutes} min={0} max={20160} />
           <NumberField label="Modification cut-off" hint="Members may edit until start − this." unit="minutes before start" echo={echo(d.modificationCutoffMinutes)} value={d.modificationCutoffMinutes} onChange={(v) => f.set('modificationCutoffMinutes', v)} error={f.errors.modificationCutoffMinutes} min={0} max={20160} />
+        </div>
+        <div className="grid gap-4 border-t border-border pt-5">
+          <div>
+            <h3 className="font-display text-[15px] font-semibold text-ink">Complaints</h3>
+            <p className="mt-0.5 text-[13px] text-muted">How long complaints wait for the reporter's approval, and how many each person may have open.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid content-start gap-2">
+              <label className="flex items-center gap-2.5 text-[13px] font-semibold text-ink">
+                <Switch
+                  checked={d.complaintAutoResolveDays !== null}
+                  onCheckedChange={(on) => f.set('complaintAutoResolveDays', on ? 7 : null)}
+                  aria-label="Auto-resolve complaints the reporter doesn't review"
+                />
+                Auto-resolve unreviewed complaints
+              </label>
+              {d.complaintAutoResolveDays !== null ? (
+                <NumberField
+                  label="Auto-resolve after"
+                  hint="Awaiting approval longer than this → resolved automatically at the next run. Changes apply to all waiting complaints."
+                  unit="days"
+                  value={d.complaintAutoResolveDays}
+                  onChange={(v) => f.set('complaintAutoResolveDays', v)}
+                  error={f.errors.complaintAutoResolveDays}
+                  min={1}
+                  max={60}
+                />
+              ) : (
+                <p className="text-[12px] text-muted">Off: complaints wait for the reporter indefinitely.</p>
+              )}
+            </div>
+            <NumberField
+              label="Reporter can reopen an auto-resolved complaint for"
+              hint="0 = off. Applies immediately to the reopen button."
+              unit="days"
+              value={d.complaintReopenWindowDays}
+              onChange={(v) => f.set('complaintReopenWindowDays', v)}
+              error={f.errors.complaintReopenWindowDays}
+              min={0}
+              max={60}
+            />
+            <NumberField
+              label="Max open complaints per user"
+              hint="Pending, in progress and awaiting approval count as open."
+              value={d.complaintMaxOpenPerUser}
+              onChange={(v) => f.set('complaintMaxOpenPerUser', v)}
+              error={f.errors.complaintMaxOpenPerUser}
+              min={1}
+              max={100}
+            />
+          </div>
         </div>
         {f.formError && <Alert variant="error">{f.formError}</Alert>}
         <Actions f={f} />
@@ -320,7 +374,7 @@ export default function SettingsPage() {
       ) : (
         <Tabs value={tab} onValueChange={(t) => setParams(t === 'booking-rules' ? {} : { tab: t }, { replace: true })}>
           <TabsList className="mb-5">
-            <TabsTrigger value="booking-rules">Booking rules</TabsTrigger>
+            <TabsTrigger value="booking-rules">Rules</TabsTrigger>
             <TabsTrigger value="registration">Registration & access</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
             <TabsTrigger value="institution">Institution</TabsTrigger>

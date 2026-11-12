@@ -29,6 +29,7 @@ export default function UsersPage() {
   const list = useUsers({
     q: dq || undefined,
     role: role === 'all' ? undefined : role,
+    serviceDepartmentId: params.get('serviceDepartmentId') || undefined,
     isActive: status === 'all' ? undefined : status === 'active',
     page,
     pageSize: 20,
@@ -64,6 +65,7 @@ export default function UsersPage() {
             { value: 'all', label: 'All roles' },
             { value: 'student', label: 'Student' },
             { value: 'faculty_staff', label: 'Faculty / Staff' },
+            { value: 'department_staff', label: 'Department Staff' },
             { value: 'super_admin', label: 'Super Admin' },
           ]}
         />
@@ -117,7 +119,7 @@ export default function UsersPage() {
                   <TD>
                     <RoleBadge role={u.role} />
                   </TD>
-                  <TD className="max-w-[160px] truncate text-muted">{u.department ?? '—'}</TD>
+                  <TD className="max-w-[160px] truncate text-muted">{u.serviceDepartment?.name ?? u.department ?? '—'}</TD>
                   <TD>{u.isActive ? <Pill tone="success">Active</Pill> : <Pill>Inactive</Pill>}</TD>
                   <TD className="tabular whitespace-nowrap text-[13px] text-muted">
                     {u.bookingCounts.total} · {u.bookingCounts.upcoming} upcoming

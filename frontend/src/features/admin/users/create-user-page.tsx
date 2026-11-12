@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { BriefcaseBusiness, GraduationCap, KeyRound, UserPlus, Wand2 } from 'lucide-react';
+import { BriefcaseBusiness, GraduationCap, KeyRound, UserPlus, Wand2, Wrench } from 'lucide-react';
 import { departmentSchema, domainAllowed, domainRestrictionMessage, emailSchema, fullNameSchema, passwordSchema } from '@campushub/shared';
 import { ApiError } from '@/lib/api-client';
 import { useDocumentTitle } from '@/hooks/misc';
 import { usePublicSettings } from '@/hooks/use-public-settings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Alert, RadioCards } from '@/components/ui/controls';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field } from '@/components/common/form-field';
@@ -18,6 +19,7 @@ import { CopyButton } from '@/components/common/small';
 import { PasswordInput } from '@/features/auth/password-input';
 import { useAdminBreadcrumb } from '@/layouts/admin-layout';
 import { useUserMutations } from '../api';
+import { useServiceDepartments } from '@/features/complaints/api';
 
 /** Stable empty list so the schema memo doesn't rebuild every render while settings load. */
 const NO_DOMAINS: string[] = [];
@@ -56,24 +58,37 @@ export default function CreateUserPage() {
       z.object({
         fullName: fullNameSchema,
         email: emailSchema.refine((e) => domainAllowed(e, domains), domains.length ? domainRestrictionMessage(domains) : 'Enter a valid email'),
-        role: z.enum(['student', 'faculty_staff']),
+        role: z.enum(['student', 'faculty_staff', 'department_staff']),
         department: z.union([departmentSchema, z.literal('')]),
+        serviceDepartmentId: z.string(),
         temporaryPassword: passwordSchema,
-      }),
+      })
+        .refine((v) => v.role !== 'department_staff' || !!v.serviceDepartmentId, {
+          message: "Choose the staff member's department.",
+          path: ['serviceDepartmentId'],
+        }),
     [domains],
   );
   type Values = z.infer<typeof schema>;
-  const form = useForm<Values>({ resolver: zodResolver(schema), mode: 'onTouched', defaultValues: { fullName: '', email: '', role: 'faculty_staff', department: '', temporaryPassword: '' } });
+  const form = useForm<Values>({ resolver: zodResolver(schema), mode: 'onTouched', defaultValues: { fullName: '', email: '', role: 'faculty_staff', department: '', serviceDepartmentId: '', temporaryPassword: '' } });
+  const role = form.watch('role');
+  const depts = useServiceDepartments();
   const { errors, isSubmitting } = form.formState;
   const pw = form.watch('temporaryPassword');
 
   const onSubmit = form.handleSubmit(async (v) => {
     setFormError(null);
     try {
-      const u = await m.create.mutateAsync({ ...v, department: v.department || null });
+      const { serviceDepartmentId, ...rest } = v;
+      const u = await m.create.mutateAsync({
+        ...rest,
+        department: v.department || null,
+        ...(v.role === 'department_staff' ? { serviceDepartmentId } : {}),
+      });
       setCreated({ id: u.id, name: u.fullName, email: u.email, password: v.temporaryPassword });
     } catch (e) {
       if (e instanceof ApiError && (e.code === 'EMAIL_ALREADY_REGISTERED' || e.code === 'EMAIL_DOMAIN_NOT_ALLOWED')) return form.setError('email', { message: e.message });
+      if (e instanceof ApiError && e.code === 'SERVICE_DEPARTMENT_REQUIRED') return form.setError('serviceDepartmentId', { message: e.message });
       if (e instanceof ApiError && e.code === 'VALIDATION_ERROR' && Object.keys(e.fieldErrors).length) {
         for (const [f, msgs] of Object.entries(e.fieldErrors)) form.setError(f as keyof Values, { message: msgs[0] });
         return;
@@ -126,11 +141,38 @@ export default function CreateUserPage() {
                   options={[
                     { value: 'student', label: 'Student', description: 'Requests bookings for academic or club activities.', icon: <GraduationCap /> },
                     { value: 'faculty_staff', label: 'Faculty / Staff', description: 'Teaching, departmental or administrative use.', icon: <BriefcaseBusiness /> },
+                    {
+                      value: 'department_staff',
+                      label: 'Department Staff',
+                      description: "Works a service department's complaint queue; can also book venues.",
+                      icon: <Wrench />,
+                    },
                   ]}
                 />
               )}
             />
-            <Field label="Department" optional error={errors.department?.message}>
+            {role === 'department_staff' && (
+              <Field label="Service department" error={errors.serviceDepartmentId?.message} hint="The complaint queue this person works.">
+                {(p) => (
+                  <Controller
+                    control={form.control}
+                    name="serviceDepartmentId"
+                    render={({ field }) => (
+                      <Select
+                        id={p.id}
+                        invalid={!!errors.serviceDepartmentId}
+                        describedBy={p['aria-describedby']}
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        placeholder="Choose a department"
+                        options={(depts.data ?? []).filter((d) => d.isActive).map((d) => ({ value: d.id, label: d.name }))}
+                      />
+                    )}
+                  />
+                )}
+              </Field>
+            )}
+            <Field label={role === 'department_staff' ? 'Academic department' : 'Department'} optional error={errors.department?.message}>
               {(p) => <Input {...p} {...form.register('department')} />}
             </Field>
           </div>

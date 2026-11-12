@@ -80,7 +80,7 @@ export function AuthLayout() {
           <Logo size={44} className="shadow-[0_8px_24px_rgba(0,0,0,0.25)]" />
           <div>
             <Wordmark invert className="text-[20px]" />
-            <p className="mt-1 text-[13px] font-medium text-white/65">Venue Booking</p>
+            <p className="mt-1 text-[13px] font-medium text-white/65">Venue booking and complaints</p>
           </div>
         </div>
         <div className="relative my-10">

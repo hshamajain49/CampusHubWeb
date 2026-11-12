@@ -1,6 +1,24 @@
 import * as React from 'react';
 import { Link } from 'react-router';
-import { Building2, CalendarCheck, CalendarRange, Check, ChartColumn, Construction, Hourglass, PartyPopper, CircleSlash, Users, X } from 'lucide-react';
+import {
+  AlarmClock,
+  Building2,
+  CalendarCheck,
+  CalendarRange,
+  Check,
+  ChartColumn,
+  CircleSlash,
+  Construction,
+  Flag,
+  Hourglass,
+  Inbox,
+  Megaphone,
+  PartyPopper,
+  ThumbsUp,
+  Timer,
+  Users,
+  X,
+} from 'lucide-react';
 import { BLOCK_TYPE_LABELS, type AdminBookingListItem, type HistoryEvent } from '@campushub/shared';
 import { formatDate, formatLongDate, formatPercent, formatShortDay, formatTimeRange, timeAgo } from '@/lib/format';
 import { useDocumentTitle } from '@/hooks/misc';
@@ -15,6 +33,7 @@ import { BookingDateBlock } from '@/components/common/booking-visuals';
 import { UserAvatar } from '@/components/common/small';
 import { useAdminDashboard } from '@/layouts/admin-layout';
 import { DecisionDialog, StartsInChip, type DecisionMode } from '../bookings/decision-dialogs';
+import { CategoryTile } from '@/features/complaints/components/complaint-visuals';
 
 const VERB: Record<HistoryEvent, string> = {
   submitted: 'submitted',
@@ -57,14 +76,63 @@ export default function AdminDashboardPage() {
             <StatCard icon={CalendarCheck} tone="approved" label="Today's bookings" value={k.todayApprovedCount} detail="Approved, today" to={`/admin/bookings?status=approved&dateFrom=${today}&dateTo=${today}`} />
             <StatCard icon={CalendarRange} tone="teal" label="Next 7 days" value={k.next7DaysApprovedCount} detail="Approved bookings" to={`/admin/bookings?status=approved&dateFrom=${today}`} />
             <StatCard icon={Building2} tone="primary" label="Active venues" value={k.activeVenues} detail={`${k.inactiveVenues} inactive`} to="/admin/venues" />
-            <StatCard icon={Users} tone="violet" label="Active members" value={k.activeMembers} detail="Students and faculty/staff" to="/admin/users" />
+            <StatCard icon={Users} tone="violet" label="Active members" value={k.activeMembers} detail="Students, faculty/staff and department staff" to="/admin/users" />
             <StatCard icon={ChartColumn} tone="neutral" label="Approval rate (30 days)" value={formatPercent(k.approvalRate30d)} detail="Approved ÷ decided" to="/admin/reports" />
           </>
         )}
       </div>
 
+      <section aria-labelledby="complaint-kpis">
+        <div className="mb-2.5 flex items-center justify-between">
+          <h2 id="complaint-kpis" className="eyebrow">
+            Complaints
+          </h2>
+          <ViewAllLink to="/admin/complaints">All complaints</ViewAllLink>
+        </div>
+        <div className="stagger grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6 lg:gap-4">
+          {!d ? (
+            Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-[138px] rounded-[14px]" />)
+          ) : (
+            <>
+              <StatCard icon={Megaphone} tone="primary" label="Open" value={d.complaintKpis.open} to="/admin/complaints" />
+              <StatCard icon={Inbox} tone="teal" label="New today" value={d.complaintKpis.newToday} to={`/admin/complaints?dateFrom=${today}&dateTo=${today}`} />
+              <StatCard icon={ThumbsUp} tone="violet" label="Awaiting reporter" value={d.complaintKpis.awaitingReporter} to="/admin/complaints?status=awaiting_confirmation" />
+              <StatCard icon={Flag} tone={d.complaintKpis.needsReassignment ? 'pending' : 'neutral'} label="Needs reassignment" value={d.complaintKpis.needsReassignment} to="/admin/complaints?flag=reassignment" />
+              <StatCard icon={AlarmClock} tone={d.complaintKpis.overdue ? 'pending' : 'neutral'} label="Overdue (> 7 days)" value={d.complaintKpis.overdue} to="/admin/complaints?flag=overdue" />
+              <StatCard
+                icon={Timer}
+                tone="approved"
+                label="Avg. resolution (30 days)"
+                value={d.complaintKpis.avgResolutionHours30d === null ? '—' : `${d.complaintKpis.avgResolutionHours30d} h`}
+                to="/admin/reports?tab=complaints"
+              />
+            </>
+          )}
+        </div>
+      </section>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="grid content-start gap-6">
+          {d && d.complaintsNeedingReassignment.length > 0 && (
+            <SectionCard title="Complaints needing reassignment" action={<ViewAllLink to="/admin/complaints?flag=reassignment" />} bodyClassName="px-2 pb-2 md:px-3 md:pb-3">
+              <ul className="grid">
+                {d.complaintsNeedingReassignment.map((c) => (
+                  <li key={c.id}>
+                    <Link to={`/admin/complaints/${c.id}`} className="flex items-center gap-3 rounded-[10px] px-3 py-2.5 hover:bg-surface-muted">
+                      <CategoryTile icon={c.category.icon} color={c.category.color} size={32} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-ink">{c.title}</span>
+                        <span className="block truncate text-[12.5px] text-muted">
+                          <span className="font-mono">{c.reference}</span> · {c.department.name}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[12px] text-muted">{timeAgo(c.updatedAt)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
+          )}
           <SectionCard title="Needs attention" action={<ViewAllLink to="/admin/approvals">View all requests</ViewAllLink>} bodyClassName="px-2 pb-2 md:px-3 md:pb-3">
             {!d ? (
               <div className="grid gap-2 p-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-16" />)}</div>

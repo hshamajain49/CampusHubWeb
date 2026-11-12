@@ -256,6 +256,7 @@ export default function BookingsPage() {
           { value: 'all', label: 'All roles' },
           { value: 'student', label: 'Student' },
           { value: 'faculty_staff', label: 'Faculty / Staff' },
+          { value: 'department_staff', label: 'Department Staff' },
         ]}
       />
       <div className="flex flex-wrap items-center gap-2 md:col-span-3">

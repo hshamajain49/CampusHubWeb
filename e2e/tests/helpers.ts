@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import pg from 'pg';
 
 export const API = (process.env.E2E_API_URL ?? 'http://localhost:4000/api/v1').replace(/\/api\/v1$/, '');
 export const STUDENT = { email: process.env.E2E_STUDENT_EMAIL ?? 'student@demo.edu', password: process.env.E2E_STUDENT_PASSWORD ?? 'Student12345' };
@@ -40,4 +41,18 @@ export function freeSlot(seed = Date.now()) {
   const hour = 8 + ((Math.floor(seed / 60) % 5) * 2); // 08, 10, 12, 14, 16
   const pad = (h: number) => `${String(h).padStart(2, '0')}:00`;
   return { date, start: pad(hour), end: pad(hour + 2) };
+}
+
+/**
+ * Removes complaints created by earlier e2e runs (titles start with "E2E " or "Mobile E2E "), so reruns never hit the
+ * open-complaint limit. Local test database only (DATABASE_URL in e2e/.env); their photo objects are left for the sweep.
+ */
+export async function cleanE2eComplaints() {
+  const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(`delete from complaints where title like 'E2E %' or title like 'Mobile E2E %'`);
+  } finally {
+    await db.end();
+  }
 }

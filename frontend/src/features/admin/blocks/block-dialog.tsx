@@ -24,6 +24,8 @@ export interface BlockDialogInitial {
   startTime?: string;
   endDate?: string;
   endTime?: string;
+  /** Pre-filled reason, e.g. from a complaint about the venue. */
+  reason?: string;
 }
 
 export function BlockDialog({
@@ -76,7 +78,7 @@ export function BlockDialog({
       const today = now?.date ?? '';
       setVenueId(initial?.venueId ?? '');
       setType('maintenance');
-      setReason('');
+      setReason(initial?.reason?.slice(0, 200) ?? '');
       setAllDay(false);
       setSd(initial?.startDate ?? today);
       setSt(initial?.startTime ?? '09:00');
