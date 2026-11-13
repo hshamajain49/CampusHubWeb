@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 import { useAuth, useMe } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Tooltip } from '@/components/ui/menus';
+import { useMediaQuery } from '@/hooks/misc';
 import { Logo, Wordmark } from '@/components/common/brand';
 import { NotificationBell } from '@/components/common/notification-bell';
 import { TimezoneBanner, WakingBanner } from '@/components/common/banners';
@@ -60,6 +62,8 @@ export function UserLayout() {
   const [menuOpen, setMenuOpen] = React.useState(false);
   usePrefetchPages(memberPages);
   const isStaff = me.role === 'department_staff';
+  const xlUp = useMediaQuery('(min-width: 1280px)');
+  const reportIconOnly = isStaff || !xlUp;
   usePrefetchPages(isStaff ? staffPages : NO_PAGES);
   const counts = useMyComplaintCounts();
   const [newInQueue, setNewInQueue] = React.useState(0);
@@ -95,14 +99,14 @@ export function UserLayout() {
                   to={n.to}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'relative flex items-center whitespace-nowrap px-2.5 text-sm font-semibold transition-colors duration-150 lg:px-3',
+                    'relative flex items-center whitespace-nowrap px-2.5 text-sm font-semibold transition-colors duration-150 xl:px-3',
                     active ? 'text-primary' : 'text-muted hover:text-ink',
                   )}
                 >
                   {n.short ? (
                     <>
-                      <span className="lg:hidden">{n.short}</span>
-                      <span className="hidden lg:inline">{n.label}</span>
+                      <span className="xl:hidden">{n.short}</span>
+                      <span className="hidden xl:inline">{n.label}</span>
                     </>
                   ) : (
                     n.label
@@ -113,12 +117,17 @@ export function UserLayout() {
               );
             })}
           </nav>
-          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-            <Button asChild variant="outline" className="hidden lg:inline-flex">
-              <Link to="/complaints/new">
-                <Megaphone /> Report an issue
-              </Link>
-            </Button>
+          {/* Header widths are measured, not guessed: the 1200 px container holds logo + 5 links + these actions only
+              when "Report an issue" is an icon below xl (always for staff, who also have the queue link) and the
+              account menu shows just the avatar (name, email and role are in its dropdown). */}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <Tooltip content={reportIconOnly ? 'Report an issue' : null}>
+              <Button asChild variant="outline" className={cn('hidden lg:inline-flex', isStaff ? 'w-10 px-0' : 'max-xl:w-10 max-xl:px-0')}>
+                <Link to="/complaints/new" aria-label="Report an issue">
+                  <Megaphone /> <span className={isStaff ? 'sr-only' : 'max-xl:sr-only'}>Report an issue</span>
+                </Link>
+              </Button>
+            </Tooltip>
             {/* Icon-only between md and lg so five nav links fit at 768 px. */}
             <Button asChild className="hidden md:inline-flex md:max-lg:w-10 md:max-lg:px-0">
               <Link to="/venues" aria-label="Book a venue">
@@ -127,7 +136,7 @@ export function UserLayout() {
             </Button>
             <NotificationBell allPath="/notifications" />
             <div className="hidden md:block">
-              <UserMenu me={me} profilePath="/profile" />
+              <UserMenu me={me} profilePath="/profile" showName={false} />
             </div>
           </div>
         </div>

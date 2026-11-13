@@ -1,6 +1,22 @@
 // Shared report building blocks (A14 bookings tab, CA05 complaints tab). Palette validated with the dataviz validator
 // (light surface): slot 1 #2F5FD3, slot 2 #14A39A. Every chart has a table twin; part-to-whole uses segmented bars.
 import * as React from 'react';
+import { useIsMdUp } from '@/hooks/misc';
+
+/**
+ * Category-axis sizing for horizontal bar charts. A fixed 130–170 px label column left phone bars ~60 px wide, so on
+ * small screens labels get 96 px and are shortened; the full label stays in the tooltip and the table twin.
+ */
+export function useCategoryAxis(desktopWidth = 150) {
+  const mdUp = useIsMdUp();
+  return React.useMemo(
+    () =>
+      mdUp
+        ? { width: desktopWidth, tickFormatter: (v: string) => v }
+        : { width: 96, tickFormatter: (v: string) => (String(v).length > 14 ? `${String(v).slice(0, 13).trimEnd()}…` : String(v)) },
+    [mdUp, desktopWidth],
+  );
+}
 
 export const SLOT1 = '#2F5FD3';
 export const SLOT2 = '#14A39A';

@@ -40,14 +40,26 @@ export function TimingChip({ booking, today }: { booking: Pick<BookingSummary, '
   return <span className={cn('chip tabular rounded-full px-2 py-0.5 text-[11.5px] font-semibold', n <= 1 ? 'bg-primary-soft text-primary' : 'bg-surface-muted text-muted')}>{label}</span>;
 }
 
-export function BookingCard({ booking, to, today }: { booking: BookingSummary; to: string; today?: string }) {
+export function BookingCard({
+  booking,
+  to,
+  today,
+  headingLevel = 3,
+}: {
+  booking: BookingSummary;
+  to: string;
+  today?: string;
+  /** 2 when the card sits directly under the page h1 (no section heading), so the outline never skips a level. */
+  headingLevel?: 2 | 3;
+}) {
+  const Heading = headingLevel === 2 ? 'h2' : 'h3';
   const final = booking.status === 'rejected' || booking.status === 'cancelled' || booking.status === 'expired';
   return (
     <Link to={to} className="card lift press group flex gap-4 p-4 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
       <BookingDateBlock date={booking.date} muted={final} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="line-clamp-2 min-w-0 break-words text-[15px] font-semibold leading-[21px] text-ink" title={booking.venue.name}>{booking.venue.name}</h3>
+          <Heading className="line-clamp-2 min-w-0 break-words text-[15px] font-semibold leading-[21px] text-ink" title={booking.venue.name}>{booking.venue.name}</Heading>
           <StatusBadge status={booking.status} size="sm" className="mt-px" />
         </div>
         <p className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] text-muted">{booking.purpose}</p>

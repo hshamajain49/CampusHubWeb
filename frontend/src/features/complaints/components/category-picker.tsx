@@ -83,8 +83,9 @@ export function CategoryPicker({
               {selected ? <Check className="size-4" strokeWidth={3} /> : <Icon className="size-4" />}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-[13.5px] font-semibold leading-[18px] text-ink">{c.name}</span>
-              <span className="block truncate text-[11.5px] leading-4 text-muted">{c.department.name}</span>
+              {/* Wrap rather than truncate: the department is what the reporter is choosing between. */}
+              <span className="block break-words text-[13.5px] font-semibold leading-[18px] text-ink">{c.name}</span>
+              <span className="line-clamp-2 break-words text-[11.5px] leading-4 text-muted">{c.department.name}</span>
             </span>
           </button>
         );

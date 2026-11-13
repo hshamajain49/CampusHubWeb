@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Ban, Check, Download, Eye, FileDown, MoreHorizontal, Search, SlidersHorizontal, X } from 'lucide-react';
 import { addDays, type AdminBookingListItem, type BookingStatus } from '@campushub/shared';
 import { cn } from '@/lib/utils';
@@ -97,12 +97,16 @@ export function BookingsTable({
     return (
       <div className="stagger grid gap-3">
         {rows.map((b) => (
-          <div key={b.id} role="link" tabIndex={0} onClick={() => navigate(`/admin/bookings/${b.id}`)} onKeyDown={(e) => e.key === 'Enter' && navigate(`/admin/bookings/${b.id}`)} className="card press flex gap-3 p-4">
+          <div key={b.id} className="card press relative flex gap-3 p-4 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring">
             <BookingDateBlock date={b.date} />
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-2">
-                <p className="truncate text-sm font-semibold text-ink">{hideVenue ? b.requester.fullName : b.venue.name}</p>
-                <RowActions b={b} onDecide={(m) => onDecide(b, m)} />
+                <Link to={`/admin/bookings/${b.id}`} className="truncate text-sm font-semibold text-ink outline-none after:absolute after:inset-0 after:content-['']">
+                  {hideVenue ? b.requester.fullName : b.venue.name}
+                </Link>
+                <div className="relative z-10">
+                  <RowActions b={b} onDecide={(m) => onDecide(b, m)} />
+                </div>
               </div>
               <p className="tabular text-[12.5px] text-muted">
                 <span className="whitespace-nowrap">{formatTimeRange(b.startTime, b.endTime)}</span> · <span className="whitespace-nowrap font-mono">{b.reference}</span>
@@ -141,7 +145,11 @@ export function BookingsTable({
         <tbody>
           {rows.map((b) => (
             <TR key={b.id} onClick={() => navigate(`/admin/bookings/${b.id}`)}>
-              <TD className="whitespace-nowrap font-mono text-[12.5px]">{b.reference}</TD>
+              <TD className="whitespace-nowrap font-mono text-[12.5px]">
+                <Link to={`/admin/bookings/${b.id}`} onClick={(e) => e.stopPropagation()} className="hover:underline">
+                  {b.reference}
+                </Link>
+              </TD>
               {!hideVenue && (
                 <TD className="max-w-[180px]">
                   <span className="block truncate font-semibold text-ink" title={b.venue.name}>{b.venue.name}</span>

@@ -360,7 +360,7 @@ export function BookingForm({
           error={errors.venueId?.message}
           labelAction={
             venueLocked && allowChangeVenue ? (
-              <button type="button" className="text-[12.5px] font-semibold text-primary hover:underline" onClick={() => setVenueLocked(false)}>
+              <button type="button" className="-my-1 min-h-6 px-1 text-[12.5px] font-semibold text-primary hover:underline" onClick={() => setVenueLocked(false)}>
                 Change
               </button>
             ) : undefined
@@ -513,11 +513,12 @@ export function BookingForm({
           )}
         </Field>
 
-        <div className="-mx-5 -mb-5 flex flex-col-reverse gap-2 rounded-b-[14px] border-t border-border bg-surface px-5 py-4 sm:flex-row sm:justify-end md:-mx-6 md:-mb-6 md:px-6 max-lg:sticky max-lg:bottom-0 max-lg:z-20 max-lg:safe-bottom">
-          <Button type="button" variant="outline" onClick={() => navigate(-1)}>
+        {/* One row at every width: a stacked pair took ~130 px of a 568 px phone screen and hid the field being edited. */}
+        <div className="-mx-5 -mb-5 flex gap-2 rounded-b-[14px] border-t border-border bg-surface px-5 py-3 sm:justify-end sm:py-4 md:-mx-6 md:-mb-6 md:px-6 max-lg:sticky max-lg:bottom-0 max-lg:z-20 max-lg:safe-bottom">
+          <Button type="button" variant="outline" size="lg" onClick={() => navigate(-1)}>
             {mode === 'create' ? 'Cancel' : 'Discard'}
           </Button>
-          <Button type="submit" size="lg" loading={isSubmitting} disabled={hardConflict || (mode === 'edit' && !isDirty)}>
+          <Button type="submit" size="lg" className="flex-1 sm:flex-none" loading={isSubmitting} disabled={hardConflict || (mode === 'edit' && !isDirty)}>
             {mode === 'create' ? <Send /> : <CalendarCheck2 />}
             {mode === 'create' ? 'Submit request' : 'Save changes'}
           </Button>

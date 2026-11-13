@@ -18,7 +18,7 @@ import { Pill } from '@/components/common/badges';
 import { DatePicker } from '@/components/common/pickers';
 import { patchParams } from '@/lib/search-params';
 import { useComplaintReport, useServiceDepartments } from '@/features/complaints/api';
-import { AXIS, ChartCard, GRID, Kpi, SegmentedBar, SLOT1, SLOT2, STATUS_FILL, TooltipBox } from './report-bits';
+import { AXIS, ChartCard, GRID, Kpi, SegmentedBar, SLOT1, SLOT2, STATUS_FILL, TooltipBox, useCategoryAxis } from './report-bits';
 
 const EMPTY = 'No complaints in this period.';
 const hours = (h: number | null) => (h === null ? '—' : h < 48 ? `${h} h` : `${Math.round((h / 24) * 10) / 10} d`);
@@ -27,12 +27,13 @@ const barHeight = (n: number) => Math.max(140, n * 30 + 40);
 const legendText = (value: string) => <span style={{ color: '#5E6A82' }}>{value}</span>;
 
 function HBar({ data, name, dataKey = 'count' }: { data: { label: string; count: number }[]; name: string; dataKey?: string }) {
+  const axis = useCategoryAxis(150);
   return (
     <ResponsiveContainer width="100%" height={barHeight(data.length)}>
       <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 4 }} barCategoryGap={4}>
         <CartesianGrid horizontal={false} stroke={GRID} />
         <XAxis type="number" allowDecimals={false} tick={AXIS} axisLine={false} tickLine={false} />
-        <YAxis type="category" dataKey="label" width={150} tick={AXIS} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="label" width={axis.width} tickFormatter={axis.tickFormatter} tick={AXIS} axisLine={false} tickLine={false} />
         <RTooltip cursor={{ fill: 'rgba(47,95,211,0.06)' }} content={<TooltipBox />} />
         <Bar dataKey={dataKey} name={name} fill={SLOT1} radius={[0, 4, 4, 0]} maxBarSize={18} />
       </BarChart>
@@ -75,6 +76,7 @@ export function ComplaintReports() {
   const report = useComplaintReport({ from: from || undefined, to: to || undefined, departmentId });
   const r = report.data;
   const set = (patch: Record<string, string | null>) => setParams(patchParams(params, patch, false), { replace: true });
+  const deptAxis = useCategoryAxis(170);
   const empty = !r || r.totals.submitted === 0;
   const open = r ? r.totals.pending_review + r.totals.in_progress + r.totals.awaiting_confirmation : 0;
 
@@ -195,7 +197,7 @@ export function ComplaintReports() {
                 >
                   <CartesianGrid horizontal={false} stroke={GRID} />
                   <XAxis type="number" allowDecimals={false} tick={AXIS} axisLine={false} tickLine={false} />
-                  <YAxis type="category" dataKey="label" width={170} tick={AXIS} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="label" width={deptAxis.width} tickFormatter={deptAxis.tickFormatter} tick={AXIS} axisLine={false} tickLine={false} />
                   <RTooltip cursor={{ fill: 'rgba(47,95,211,0.06)' }} content={<TooltipBox />} />
                   <Legend wrapperStyle={{ fontSize: 12.5 }} formatter={legendText} />
                   {/* 2 px surface gap between the stacked segments */}

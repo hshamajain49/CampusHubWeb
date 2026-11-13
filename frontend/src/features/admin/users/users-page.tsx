@@ -106,12 +106,14 @@ export default function UsersPage() {
             </THead>
             <tbody>
               {rows.map((u) => (
-                <TR key={u.id} onClick={() => navigate(`/admin/users/${u.id}`)} className={cn(!u.isActive && 'opacity-60')}>
+                <TR key={u.id} onClick={() => navigate(`/admin/users/${u.id}`)}>
                   <TD>
                     <div className="flex min-w-0 items-center gap-3">
-                      <UserAvatar name={u.fullName} role={u.role} size={32} />
+                      <UserAvatar name={u.fullName} role={u.role} size={32} className={cn(!u.isActive && 'opacity-50 grayscale')} />
                       <div className="min-w-0">
-                        <p className="truncate font-semibold text-ink">{u.fullName}</p>
+                        <Link to={`/admin/users/${u.id}`} onClick={(e) => e.stopPropagation()} className="block truncate font-semibold text-ink hover:underline">
+                          {u.fullName}
+                        </Link>
                         <p className="max-w-[240px] truncate text-[12.5px] text-muted">{u.email}</p>
                       </div>
                     </div>
@@ -119,7 +121,9 @@ export default function UsersPage() {
                   <TD>
                     <RoleBadge role={u.role} />
                   </TD>
-                  <TD className="max-w-[160px] truncate text-muted">{u.serviceDepartment?.name ?? u.department ?? '—'}</TD>
+                  <TD className="max-w-[160px] truncate text-muted" title={u.serviceDepartment?.name ?? u.department ?? undefined}>
+                    {u.serviceDepartment?.name ?? u.department ?? '—'}
+                  </TD>
                   <TD>{u.isActive ? <Pill tone="success">Active</Pill> : <Pill>Inactive</Pill>}</TD>
                   <TD className="tabular whitespace-nowrap text-[13px] text-muted">
                     {u.bookingCounts.total} · {u.bookingCounts.upcoming} upcoming
@@ -134,10 +138,12 @@ export default function UsersPage() {
       ) : (
         <div className="stagger grid gap-3">
           {rows.map((u) => (
-            <div key={u.id} role="link" tabIndex={0} onClick={() => navigate(`/admin/users/${u.id}`)} className={cn('card press flex items-center gap-3 p-3.5', !u.isActive && 'opacity-60')}>
-              <UserAvatar name={u.fullName} role={u.role} size={40} />
+            <div key={u.id} className="card press relative flex items-center gap-3 p-3.5 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring">
+              <UserAvatar name={u.fullName} role={u.role} size={40} className={cn(!u.isActive && 'opacity-50 grayscale')} />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-ink">{u.fullName}</p>
+                <Link to={`/admin/users/${u.id}`} className="block truncate font-semibold text-ink outline-none after:absolute after:inset-0 after:content-['']">
+                  {u.fullName}
+                </Link>
                 <p className="truncate text-[12.5px] text-muted">{u.email}</p>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   <RoleBadge role={u.role} />

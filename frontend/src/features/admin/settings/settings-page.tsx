@@ -63,7 +63,7 @@ function NumberField({ label, hint, value, onChange, error, unit, echo, min, max
   return (
     <Field label={label} hint={hint} error={error}>
       {(p) => (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Input
             {...p}
             inputMode="numeric"
@@ -77,7 +77,7 @@ function NumberField({ label, hint, value, onChange, error, unit, echo, min, max
             aria-valuemax={max}
           />
           {unit && <span className="text-[13px] text-muted">{unit}</span>}
-          {echo && <span className="tabular rounded-full bg-surface-muted px-2 py-0.5 text-[12px] font-semibold text-muted">= {echo}</span>}
+          {echo && <span className="tabular whitespace-nowrap rounded-full bg-surface-muted px-2 py-0.5 text-[12px] font-semibold text-muted">= {echo}</span>}
         </div>
       )}
     </Field>
@@ -129,7 +129,7 @@ function BookingRulesTab({ s }: { s: Settings }) {
         </div>
         <div className="grid gap-4 border-t border-border pt-5">
           <div>
-            <h3 className="font-display text-[15px] font-semibold text-ink">Complaints</h3>
+            <h2 className="font-display text-[15px] font-semibold text-ink">Complaints</h2>
             <p className="mt-0.5 text-[13px] text-muted">How long complaints wait for the reporter's approval, and how many each person may have open.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">

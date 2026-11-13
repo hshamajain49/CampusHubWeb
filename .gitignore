@@ -17,3 +17,6 @@ coverage
 e2e/screens
 .neon
 *.log
+
+# UI audit output (node e2e/scripts/ui-audit.mjs)
+ui-audit/

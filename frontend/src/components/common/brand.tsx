@@ -1,16 +1,20 @@
+import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 /** The logo tile: three slot bars — the product's motif — on the navy→teal brand gradient. */
 export function Logo({ size = 32, className }: { size?: number; className?: string }) {
+  // One gradient id per instance: url(#id) resolves to the FIRST element with that id, so a shared id breaks every
+  // visible logo whenever an earlier copy sits in a display:none subtree (the admin sidebar on phones).
+  const gradientId = `logo-g${React.useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" className={cn('shrink-0', className)} aria-hidden>
       <defs>
-        <linearGradient id="logo-g" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#1E3A8A" />
           <stop offset="1" stopColor="#0D9488" />
         </linearGradient>
       </defs>
-      <rect width="64" height="64" rx="16" fill="url(#logo-g)" />
+      <rect width="64" height="64" rx="16" fill={`url(#${gradientId})`} />
       <rect x="14" y="17" width="36" height="7" rx="3.5" fill="#fff" fillOpacity=".28" />
       <rect x="14" y="17" width="22" height="7" rx="3.5" fill="#fff" />
       <rect x="14" y="28.5" width="36" height="7" rx="3.5" fill="#fff" fillOpacity=".28" />

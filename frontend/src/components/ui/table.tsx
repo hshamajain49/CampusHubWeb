@@ -30,7 +30,7 @@ export function TH({
       {...p}
     >
       {onSort ? (
-        <button type="button" onClick={onSort} className="inline-flex items-center gap-1.5 uppercase hover:text-ink">
+        <button type="button" onClick={onSort} className="inline-flex min-h-6 items-center gap-1.5 uppercase hover:text-ink">
           {children}
           {sort === 'asc' ? <ArrowUp className="size-3.5" /> : sort === 'desc' ? <ArrowDown className="size-3.5" /> : <ArrowUpDown className="size-3.5 opacity-50" />}
         </button>

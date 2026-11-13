@@ -40,6 +40,8 @@ export function Pagination({
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   if (total === 0) return null;
+  // One page and nothing to resize: the count is enough; disabled arrows around a lone "1" are noise.
+  const showControls = pages > 1 || (!!onPageSize && !!pageSizes && total > Math.min(...pageSizes));
   const from = (page - 1) * pageSize + 1;
   const to = Math.min(total, page * pageSize);
   const nums: (number | '…')[] = [];
@@ -54,40 +56,42 @@ export function Pagination({
       <p className="tabular text-[13px] text-muted">
         Showing {formatNumber(from)}–{formatNumber(to)} of {formatNumber(total)}
       </p>
-      <div className="flex items-center gap-1">
-        {onPageSize && pageSizes && (
-          <Select
-            aria-label="Rows per page"
-            value={String(pageSize)}
-            onValueChange={(v) => onPageSize(Number(v))}
-            options={pageSizes.map((n) => ({ value: String(n), label: `${n} / page` }))}
-            className="mr-2 h-9 w-[118px] md:h-9"
-          />
-        )}
-        <button type="button" className={cn(btn, 'text-muted hover:bg-surface-muted')} disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
-          <ChevronLeft className="size-4" />
-        </button>
-        {nums.map((n, i) =>
-          n === '…' ? (
-            <span key={`e${i}`} className="w-6 text-center text-subtle">
-              …
-            </span>
-          ) : (
-            <button
-              key={n}
-              type="button"
-              aria-current={n === page ? 'page' : undefined}
-              onClick={() => onPage(n)}
-              className={cn(btn, n === page ? 'bg-primary text-white' : 'text-ink hover:bg-surface-muted')}
-            >
-              {n}
-            </button>
-          ),
-        )}
-        <button type="button" className={cn(btn, 'text-muted hover:bg-surface-muted')} disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Next page">
-          <ChevronRight className="size-4" />
-        </button>
-      </div>
+      {showControls && (
+        <div className="flex items-center gap-1">
+          {onPageSize && pageSizes && (
+            <Select
+              aria-label="Rows per page"
+              value={String(pageSize)}
+              onValueChange={(v) => onPageSize(Number(v))}
+              options={pageSizes.map((n) => ({ value: String(n), label: `${n} / page` }))}
+              className="mr-2 h-9 w-[118px] md:h-9"
+            />
+          )}
+          <button type="button" className={cn(btn, 'text-muted hover:bg-surface-muted')} disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
+            <ChevronLeft className="size-4" />
+          </button>
+          {nums.map((n, i) =>
+            n === '…' ? (
+              <span key={`e${i}`} className="w-6 text-center text-subtle">
+                …
+              </span>
+            ) : (
+              <button
+                key={n}
+                type="button"
+                aria-current={n === page ? 'page' : undefined}
+                onClick={() => onPage(n)}
+                className={cn(btn, n === page ? 'bg-primary text-white' : 'text-ink hover:bg-surface-muted')}
+              >
+                {n}
+              </button>
+            ),
+          )}
+          <button type="button" className={cn(btn, 'text-muted hover:bg-surface-muted')} disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Next page">
+            <ChevronRight className="size-4" />
+          </button>
+        </div>
+      )}
     </nav>
   );
 }

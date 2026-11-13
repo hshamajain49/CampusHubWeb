@@ -67,7 +67,7 @@ export default function AdminDashboardPage() {
         description={today ? `${formatLongDate(today)}${settings ? ` · ${settings.institutionName}` : ''}` : undefined}
       />
 
-      <div className="stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+      <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
         {!k ? (
           Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-[138px] rounded-[14px]" />)
         ) : (

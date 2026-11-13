@@ -36,7 +36,7 @@ export function PendingRequestCard({ b, today, onDecide, leaving }: { b: AdminBo
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-display text-[16px] font-semibold text-ink">{b.venue.name}</h3>
+              <h2 className="font-display text-[16px] font-semibold text-ink">{b.venue.name}</h2>
               <span className="font-mono text-[12px] text-subtle">{b.reference}</span>
             </div>
             <p className="mt-1 line-clamp-3 text-[13.5px] leading-5 text-ink">{b.purpose}</p>

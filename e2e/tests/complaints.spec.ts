@@ -156,7 +156,10 @@ test('CE2E-03: staff request reassignment → admin reassigns → it moves from 
   const admin = await signedIn(browser, ADMIN, '/admin/login');
   await admin.goto('/admin/complaints?flag=reassignment');
   await admin.getByRole('link', { name: c.reference }).click();
-  await admin.getByRole('button', { name: 'Reassign' }).first().click();
+  // Wait for the detail page: on the list, a loose 'Reassign' also matches the "Needs reassignment" filter.
+  await expect(admin).toHaveURL(new RegExp(`/admin/complaints/${c.id}$`));
+  await expect(admin.getByRole('heading', { name: 'Complaint details', level: 1 })).toBeVisible();
+  await admin.getByRole('button', { name: 'Reassign', exact: true }).first().click();
   const re = admin.getByRole('dialog');
   await expect(re.getByRole('combobox')).toContainText('Plumbing'); // pre-filled with the staff suggestion
   await re.getByLabel('Note').fill('Water leak — moved to Plumbing.');

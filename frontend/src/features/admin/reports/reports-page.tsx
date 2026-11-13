@@ -22,11 +22,12 @@ import { Pill } from '@/components/common/badges';
 import { DatePicker } from '@/components/common/pickers';
 import { useAllVenueOptions, useReports } from '../api';
 import { patchParams } from '@/lib/search-params';
-import { AXIS, ChartCard, GRID, Kpi, SegmentedBar, SLOT1, SLOT2, STATUS_FILL, TooltipBox } from './report-bits';
+import { AXIS, ChartCard, GRID, Kpi, SegmentedBar, SLOT1, SLOT2, STATUS_FILL, TooltipBox, useCategoryAxis } from './report-bits';
 
 type SortKey = 'venueName' | 'requests' | 'approved' | 'approvedHours' | 'utilizationPct';
 
 function BookingReports() {
+  const venueAxis = useCategoryAxis(130);
   const [params, setParams] = useSearchParams();
   const now = useCampusNow();
   const { data: settings } = usePublicSettings();
@@ -201,7 +202,7 @@ function BookingReports() {
                 <BarChart data={topVenues} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 0 }} barCategoryGap={6}>
                   <CartesianGrid stroke={GRID} horizontal={false} />
                   <XAxis type="number" allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="venueName" width={130} tick={AXIS} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="venueName" width={venueAxis.width} tickFormatter={venueAxis.tickFormatter} tick={AXIS} tickLine={false} axisLine={false} />
                   <RTooltip content={<TooltipBox />} cursor={{ fill: 'rgba(47,95,211,0.06)' }} />
                   <Bar dataKey="requests" name="Requests" fill={SLOT1} radius={[0, 4, 4, 0]} maxBarSize={18} isAnimationActive={false} />
                 </BarChart>
@@ -223,7 +224,7 @@ function BookingReports() {
                 <BarChart data={utilisation} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 0 }} barCategoryGap={6}>
                   <CartesianGrid stroke={GRID} horizontal={false} />
                   <XAxis type="number" unit="%" tick={AXIS} tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="venueName" width={130} tick={AXIS} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="venueName" width={venueAxis.width} tickFormatter={venueAxis.tickFormatter} tick={AXIS} tickLine={false} axisLine={false} />
                   <RTooltip content={<TooltipBox />} cursor={{ fill: 'rgba(47,95,211,0.06)' }} />
                   <Bar dataKey="utilizationPct" name="Utilisation %" fill={SLOT1} radius={[0, 4, 4, 0]} maxBarSize={18} isAnimationActive={false} />
                 </BarChart>

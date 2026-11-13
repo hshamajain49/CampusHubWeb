@@ -161,12 +161,14 @@ export default function VenuesPage() {
             </THead>
             <tbody>
               {rows.map((v) => (
-                <TR key={v.id} onClick={() => navigate(`/admin/venues/${v.id}`)} className={cn(!v.isActive && 'opacity-60')}>
+                <TR key={v.id} onClick={() => navigate(`/admin/venues/${v.id}`)}>
                   <TD>
                     <div className="flex items-center gap-3">
-                      <VenueBanner venueId={v.id} imageUrl={v.imageThumbUrl} className="size-10 shrink-0 rounded-[10px]" icon={false} />
+                      <VenueBanner venueId={v.id} imageUrl={v.imageThumbUrl} className={cn('size-10 shrink-0 rounded-[10px]', !v.isActive && 'opacity-50 grayscale')} icon={false} />
                       <div className="min-w-0">
-                        <p className="truncate font-semibold text-ink">{v.name}</p>
+                        <Link to={`/admin/venues/${v.id}`} onClick={(e) => e.stopPropagation()} className="block truncate font-semibold text-ink hover:underline">
+                          {v.name}
+                        </Link>
                         <p className="truncate text-[12.5px] text-muted">{v.building}</p>
                       </div>
                     </div>
@@ -188,16 +190,20 @@ export default function VenuesPage() {
       ) : (
         <div className="stagger grid gap-3">
           {rows.map((v) => (
-            <div key={v.id} role="link" tabIndex={0} onClick={() => navigate(`/admin/venues/${v.id}`)} className={cn('card press flex items-center gap-3 p-3.5', !v.isActive && 'opacity-60')}>
-              <VenueBanner venueId={v.id} imageUrl={v.imageThumbUrl} className="size-12 shrink-0 rounded-[12px]" icon={false} />
+            <div key={v.id} className="card press relative flex items-center gap-3 p-3.5 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring">
+              <VenueBanner venueId={v.id} imageUrl={v.imageThumbUrl} className={cn('size-12 shrink-0 rounded-[12px]', !v.isActive && 'opacity-50 grayscale')} icon={false} />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-ink">{v.name}</p>
+                <Link to={`/admin/venues/${v.id}`} className="block truncate font-semibold text-ink outline-none after:absolute after:inset-0 after:content-['']">
+                  {v.name}
+                </Link>
                 <p className="tabular truncate text-[12.5px] text-muted">
                   {v.building} · {formatNumber(v.capacity)} seats
                 </p>
                 <div className="mt-1">{v.isActive ? <Pill tone="success">Active</Pill> : <Pill>Inactive</Pill>}</div>
               </div>
-              <VenueMenu v={v} onDialog={(d) => setDialog({ v, d })} onBlock={() => setBlockFor(v)} />
+              <div className="relative z-10">
+                <VenueMenu v={v} onDialog={(d) => setDialog({ v, d })} onBlock={() => setBlockFor(v)} />
+              </div>
             </div>
           ))}
         </div>

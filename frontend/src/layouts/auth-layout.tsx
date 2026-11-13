@@ -1,5 +1,5 @@
 import { Outlet } from 'react-router';
-import { CalendarCheck2, FileCheck2, Search } from 'lucide-react';
+import { CalendarCheck2, Megaphone, Search } from 'lucide-react';
 import { Logo, Wordmark } from '@/components/common/brand';
 import { usePublicSettings } from '@/hooks/use-public-settings';
 
@@ -62,7 +62,7 @@ function WeekIllustration() {
 const BENEFITS = [
   { icon: Search, text: 'Find a free venue in seconds' },
   { icon: CalendarCheck2, text: 'Track every request in one place' },
-  { icon: FileCheck2, text: 'Approved bookings with downloadable confirmation' },
+  { icon: Megaphone, text: 'Report campus issues and follow the fix' },
 ];
 
 export function AuthLayout() {
@@ -84,9 +84,9 @@ export function AuthLayout() {
           </div>
         </div>
         <div className="relative my-10">
-          <h1 className="font-display text-[30px] font-bold leading-9 tracking-[-0.5px]">Your campus, simplified.</h1>
+          <p className="font-display text-[30px] font-bold leading-9 tracking-[-0.5px]">Your campus, simplified.</p>
           <p className="mt-3 max-w-[420px] text-[15px] leading-6 text-white/75">
-            Request halls, labs and spaces in a few steps, and see every decision as it happens.
+            Book halls, labs and spaces, report what needs fixing, and see every decision as it happens.
           </p>
           <ul className="mt-7 grid gap-3.5">
             {BENEFITS.map(({ icon: Icon, text }) => (

@@ -52,7 +52,7 @@ export function ComplaintsTable({ rows, viewer, linkTo }: { rows: ComplaintSumma
                   {c.reference}
                 </Link>
               </TD>
-              <TD className="max-w-[260px]">
+              <TD className="max-w-[240px]">
                 <span className="flex items-center gap-2.5">
                   <CategoryTile icon={c.category.icon} color={c.category.color} size={32} />
                   <span className="min-w-0">
@@ -64,13 +64,13 @@ export function ComplaintsTable({ rows, viewer, linkTo }: { rows: ComplaintSumma
                 </span>
               </TD>
               {viewer === 'admin' && (
-                <TD className="max-w-[170px]">
+                <TD className="max-w-[150px]">
                   <span className="block truncate text-ink" title={c.department.name}>
                     {c.department.name}
                   </span>
                 </TD>
               )}
-              <TD className="max-w-[170px]">
+              <TD className="max-w-[150px]">
                 <span className="block truncate text-muted" title={c.venue?.name ?? c.locationDetails ?? ''}>
                   {c.venue?.name ?? c.locationDetails ?? '—'}
                 </span>
@@ -87,13 +87,17 @@ export function ComplaintsTable({ rows, viewer, linkTo }: { rows: ComplaintSumma
                 </Tooltip>
               </TD>
               <TD>
-                <span className="grid justify-items-start gap-1">
+                {/* Flex, not grid: the global `.grid` rule makes a grid's min-content 0, so the column would size to its
+                    header and the badges would spill into Handler. */}
+                <span className="flex flex-col items-start gap-1">
                   <ComplaintStatusBadge status={c.status} size="sm" />
                   <ComplaintFlags c={c} viewer={viewer} />
                 </span>
               </TD>
-              <TD className="max-w-[140px]">
-                <span className="block truncate text-muted">{c.handledBy?.fullName ?? '—'}</span>
+              <TD className="max-w-[130px]">
+                <span className="block truncate text-muted" title={c.handledBy?.fullName}>
+                  {c.handledBy?.fullName ?? '—'}
+                </span>
               </TD>
               {viewer === 'admin' && <TD className="whitespace-nowrap text-[13px] text-muted">{timeAgo(c.updatedAt)}</TD>}
             </TR>

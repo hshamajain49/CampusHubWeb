@@ -259,6 +259,7 @@ export function VenueListPage() {
           <div key={`${page}-${list.dataUpdatedAt > 0 ? 'r' : 'l'}`} className={cn('stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3', list.isPlaceholderData && 'opacity-60 transition-opacity duration-150')}>
             {list.data!.data.map((v) => (
               <VenueCard
+                headingLevel={2}
                 key={v.id}
                 venue={v}
                 to={`/venues/${v.id}`}

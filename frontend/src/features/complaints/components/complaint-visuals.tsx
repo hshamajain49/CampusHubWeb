@@ -154,6 +154,8 @@ export function ComplaintProgress({ status, viewer = 'reporter', className }: { 
 // ─────────────────────────── card (CU01 / CS02 mobile) ───────────────────────────
 export function ComplaintCard({ c, to, viewer, action }: { c: ComplaintSummary; to: string; viewer: 'reporter' | 'staff' | 'admin'; action?: React.ReactNode }) {
   const place = c.venue?.name ?? c.locationDetails;
+  const hasFlags =
+    c.rejectedByReporter || (viewer === 'reporter' ? c.awaitingReporter : c.reassignmentRequested || c.isOverdue);
   // Stretched-link card: the title link covers the card, so actions can sit on top without nesting interactive content.
   return (
     <div
@@ -177,7 +179,9 @@ export function ComplaintCard({ c, to, viewer, action }: { c: ComplaintSummary; 
           {place && (
             <>
               <MapPin className="size-3.5 shrink-0" aria-hidden />
-              <span className="truncate">{place}</span>
+              <span className="truncate" title={place}>
+                {place}
+              </span>
               <span aria-hidden>·</span>
             </>
           )}
@@ -195,10 +199,12 @@ export function ComplaintCard({ c, to, viewer, action }: { c: ComplaintSummary; 
             {c.reporter.fullName} <RoleBadge role={c.reporter.role} />
           </p>
         )}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <ComplaintFlags c={c} viewer={viewer} />
-          {action && <span className="relative z-10">{action}</span>}
-        </div>
+        {(hasFlags || action) && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <ComplaintFlags c={c} viewer={viewer} />
+            {action && <span className="relative z-10">{action}</span>}
+          </div>
+        )}
       </div>
     </div>
   );

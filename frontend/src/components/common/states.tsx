@@ -12,6 +12,7 @@ export function EmptyState({
   tone = 'primary',
   className,
   compact = false,
+  titleAs: TitleTag = 'h2',
 }: {
   icon?: React.ComponentType<{ className?: string }>;
   title: string;
@@ -20,6 +21,8 @@ export function EmptyState({
   tone?: 'primary' | 'danger' | 'teal';
   className?: string;
   compact?: boolean;
+  /** 'h1' when the empty state is the whole page (404); otherwise it sits under the page title. */
+  titleAs?: 'h1' | 'h2';
 }) {
   const tones = {
     primary: ['bg-primary/[0.06]', 'bg-primary/[0.12]', 'text-primary'],
@@ -33,7 +36,7 @@ export function EmptyState({
           <Icon className={cn(compact ? 'size-7' : 'size-9', tones[2])} aria-hidden />
         </div>
       </div>
-      <h2 className={cn('mt-5 font-display font-semibold text-ink', compact ? 'text-base' : 'text-[19px] leading-[26px]')}>{title}</h2>
+      <TitleTag className={cn('mt-5 font-display font-semibold text-ink', compact ? 'text-base' : 'text-[19px] leading-[26px]')}>{title}</TitleTag>
       {message && <p className="mt-1.5 max-w-[420px] text-sm leading-5 text-muted">{message}</p>}
       {action && <div className="mt-5 flex flex-wrap justify-center gap-2">{action}</div>}
     </div>

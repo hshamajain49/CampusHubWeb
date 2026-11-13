@@ -17,6 +17,7 @@ export function NotFoundPage() {
         </div>
         <EmptyState
           icon={Compass}
+          titleAs="h1"
           title="Page not found"
           message="The page you're looking for doesn't exist."
           action={

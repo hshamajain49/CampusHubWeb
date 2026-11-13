@@ -15,7 +15,7 @@
   --surface-muted: #eff2f8;
   --text: #141b2d;
   --text-muted: #5e6a82;
-  --text-subtle: #98a2b6;
+  --text-subtle: #667189; /* 4.9:1 on white, 4.5:1 on the page background (WCAG AA small text) */
   --border: #e4e8f1;
   --ring: #1e3a8a;
   --destructive: #dc4a4a;
@@ -527,6 +527,14 @@
 }
 .fc .fc-bg-event {
   opacity: 1;
+}
+/* FullCalendar paints event text on .fc-event-main in --fc-event-text-color (white). Inherit instead, so each ev-*
+   class below decides the text colour: dark text on the light pending/hold/blocked/mine fills, white on solid fills. */
+.fc .fc-event .fc-event-main,
+.fc .fc-event .fc-event-main-frame,
+.fc .fc-event .fc-event-time,
+.fc .fc-event .fc-event-title {
+  color: inherit;
 }
 .fc .ev-booked {
   background: var(--slot-booked) !important;

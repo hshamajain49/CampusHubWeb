@@ -258,7 +258,11 @@ export function BookingHistoryPage() {
             <tbody>
               {q.data!.data.map((b) => (
                 <TR key={b.id} onClick={() => navigate(`/bookings/${b.id}`)}>
-                  <TD className="font-mono text-[13px]">{b.reference}</TD>
+                  <TD className="font-mono text-[13px]">
+                    <Link to={`/bookings/${b.id}`} onClick={(e) => e.stopPropagation()} className="hover:underline">
+                      {b.reference}
+                    </Link>
+                  </TD>
                   <TD className="max-w-[220px]">
                     <span className="block truncate font-semibold text-ink">{b.venue.name}</span>
                   </TD>
@@ -266,7 +270,11 @@ export function BookingHistoryPage() {
                   <TD className="tabular whitespace-nowrap">{formatTimeRange(b.startTime, b.endTime)}</TD>
                   <TD className="max-w-[260px]">
                     <StatusBadge status={b.status} size="sm" />
-                    {reasonOf(b) && <span className="mt-1 block truncate text-[12px] text-muted">Reason: {reasonOf(b)}</span>}
+                    {reasonOf(b) && (
+                      <span className="mt-1 block truncate text-[12px] text-muted" title={reasonOf(b) ?? undefined}>
+                        Reason: {reasonOf(b)}
+                      </span>
+                    )}
                     {b.status === 'approved' && <span className="mt-1 block text-[12px] text-muted">Completed</span>}
                   </TD>
                   <TD className="whitespace-nowrap text-[13px] text-muted">{timeAgo(b.updatedAt)}</TD>
@@ -282,7 +290,7 @@ export function BookingHistoryPage() {
         <div className="stagger grid gap-3">
           {q.data!.data.map((b) => (
             <div key={b.id}>
-              <BookingCard booking={b} to={`/bookings/${b.id}`} />
+              <BookingCard booking={b} to={`/bookings/${b.id}`} headingLevel={2} />
               {reasonOf(b) && <p className="mt-1.5 px-1 text-[12px] text-muted">Reason: {reasonOf(b)}</p>}
             </div>
           ))}

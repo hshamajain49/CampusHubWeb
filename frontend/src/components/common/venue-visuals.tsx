@@ -75,7 +75,13 @@ export function AmenityChip({ name, dense = false, onRemove }: { name: string; d
       <Icon className={dense ? 'size-3' : 'size-3.5'} />
       <span className="truncate">{name}</span>
       {onRemove && (
-        <button type="button" onClick={onRemove} className="-mr-1 ml-0.5 rounded-full p-0.5 hover:bg-secondary/15" aria-label={`Remove ${name}`}>
+        <button
+          type="button"
+          onClick={onRemove}
+          // 24×24 target (WCAG 2.2 2.5.8) without growing the chip: negative margins absorb the extra size.
+          className="-my-1 -mr-2 ml-0 grid size-6 shrink-0 place-items-center rounded-full transition-colors duration-150 hover:bg-secondary/15"
+          aria-label={`Remove ${name}`}
+        >
           <svg viewBox="0 0 12 12" className="size-2.5" aria-hidden>
             <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
@@ -90,12 +96,16 @@ export function VenueCard({
   to,
   freeChip,
   action,
+  headingLevel = 3,
 }: {
+  /** 2 when the grid sits directly under the page h1. */
+  headingLevel?: 2 | 3;
   venue: VenueSummary;
   to: string;
   freeChip?: string | null;
   action?: React.ReactNode;
 }) {
+  const VenueHeading = headingLevel === 2 ? 'h2' : 'h3';
   const extra = venue.amenities.length - 3;
   return (
     <article className="card lift group relative flex flex-col overflow-hidden">
@@ -110,11 +120,11 @@ export function VenueCard({
         </div>
       </VenueBanner>
       <div className="flex flex-1 flex-col p-4">
-        <h3 className="truncate text-[15px] font-semibold leading-[21px] text-ink" title={venue.name}>
+        <VenueHeading className="truncate text-[15px] font-semibold leading-[21px] text-ink" title={venue.name}>
           <Link to={to} className="outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-[14px] focus-visible:after:outline-2 focus-visible:after:outline-ring">
             {venue.name}
           </Link>
-        </h3>
+        </VenueHeading>
         <p className="mt-1 flex min-w-0 items-center gap-1 text-[13px] text-muted">
           <MapPin className="size-3.5 shrink-0" aria-hidden />
           <span className="truncate">
