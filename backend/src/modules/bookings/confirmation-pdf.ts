@@ -11,14 +11,14 @@ interface PdfContext {
   campusTimezone: string;
 }
 
-export function assertApproved(b: { status: string }) {
-  if (b.status !== 'approved') {
-    throw appError('INVALID_STATUS_TRANSITION', 'A confirmation is only available for approved bookings.');
+export function assertConfirmed(b: { status: string }) {
+  if (b.status !== 'confirmed' && b.status !== 'completed') {
+    throw appError('INVALID_STATUS_TRANSITION', 'A confirmation is only available for confirmed bookings.');
   }
 }
 
 export function renderConfirmationPdf(b: Booking, ctx: PdfContext): Promise<Buffer> {
-  assertApproved(b);
+  assertConfirmed(b);
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margins: { top: 48, bottom: 48, left: 48, right: 48 }, info: { Title: `Booking confirmation ${b.reference}` } });
     const chunks: Buffer[] = [];
@@ -37,7 +37,7 @@ export function renderConfirmationPdf(b: Booking, ctx: PdfContext): Promise<Buff
     doc.font('Helvetica-Bold').fontSize(20).fillColor(ink).text('Venue Booking Confirmation', left, doc.y + 4, { width: width - 170 });
     doc.font('Helvetica').fontSize(9).fillColor(muted).text('REFERENCE', left + width - 160, top, { width: 160, align: 'right', characterSpacing: 0.6 });
     doc.font('Helvetica-Bold').fontSize(12).fillColor(ink).text(b.reference, left + width - 160, top + 13, { width: 160, align: 'right' });
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#146C43').text('APPROVED', left + width - 160, top + 31, { width: 160, align: 'right', characterSpacing: 0.8 });
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#146C43').text(b.status === 'completed' ? 'COMPLETED' : 'CONFIRMED', left + width - 160, top + 31, { width: 160, align: 'right', characterSpacing: 0.8 });
 
     // 2. Divider
     let y = Math.max(doc.y, top + 50) + 16;
@@ -68,18 +68,18 @@ export function renderConfirmationPdf(b: Booking, ctx: PdfContext): Promise<Buff
       ['Name', b.requester.fullName],
       ['Email', b.requester.email],
       ['Role', ROLE_LABELS[b.requester.role]],
+      ...(b.idNumber ? ([['USN / Faculty ID', b.idNumber]] as [string, string][]) : []),
       ...(b.requester.department ? ([['Department', b.requester.department]] as [string, string][]) : []),
     ]);
-    section('Approval', [
-      ['Approved by', b.decidedBy?.fullName ?? '—'],
-      ['Approved on', b.decidedAt ? campusTimestamp(new Date(b.decidedAt), ctx.campusTimezone) : '—'],
-      ...(b.approvalNote ? ([['Note', b.approvalNote]] as [string, string][]) : []),
+    section('Confirmation', [
+      ['Confirmed on', b.confirmedAt ? campusTimestamp(new Date(b.confirmedAt), ctx.campusTimezone) : '—'],
+      ...(b.queuedAt ? ([['Joined the queue', campusTimestamp(new Date(b.queuedAt), ctx.campusTimezone)]] as [string, string][]) : []),
     ]);
 
     // 6. Footer
     const footerLines = [
       `Generated on ${campusTimestamp(new Date(), ctx.campusTimezone)} (${ctx.campusTimezone}).`,
-      `This confirmation is valid only while the booking remains Approved. Check the current status at ${config.FRONTEND_URL}/bookings/${b.id}.`,
+      `This confirmation is valid only while the booking remains Confirmed. Check the current status at ${config.FRONTEND_URL}/bookings/${b.id}.`,
       ...(ctx.supportEmail ? [`Questions: ${ctx.supportEmail}`] : []),
     ];
     const footerY = doc.page.height - 48 - footerLines.length * 22;

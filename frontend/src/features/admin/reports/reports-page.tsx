@@ -18,13 +18,13 @@ import { ComplaintReports } from './complaint-reports';
 import { Table, TableShell, TD, TH, THead, TR } from '@/components/ui/table';
 import { PageHeader } from '@/components/common/layout-bits';
 import { ErrorState } from '@/components/common/states';
-import { Pill } from '@/components/common/badges';
+import { Pill, roleColor } from '@/components/common/badges';
 import { DatePicker } from '@/components/common/pickers';
 import { useAllVenueOptions, useReports } from '../api';
 import { patchParams } from '@/lib/search-params';
 import { AXIS, ChartCard, GRID, Kpi, SegmentedBar, SLOT1, SLOT2, STATUS_FILL, TooltipBox, useCategoryAxis } from './report-bits';
 
-type SortKey = 'venueName' | 'requests' | 'approved' | 'approvedHours' | 'utilizationPct';
+type SortKey = 'venueName' | 'requests' | 'booked' | 'bookedHours' | 'utilizationPct';
 
 function BookingReports() {
   const venueAxis = useCategoryAxis(130);
@@ -130,13 +130,13 @@ function BookingReports() {
         <div className={cn('grid gap-5 transition-opacity duration-150', report.isPlaceholderData && 'opacity-60')}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Kpi label="Requests" value={String(r.totals.requests)} />
-            <Kpi label="Approved" value={String(r.totals.approved)} />
-            <Kpi label="Rejected" value={String(r.totals.rejected)} />
+            <Kpi label="Booked" value={String(r.totals.booked)} hint="Confirmed or completed" />
             <Kpi label="Cancelled" value={String(r.totals.cancelled)} />
-            <Kpi label="Expired" value={String(r.totals.expired)} />
-            <Kpi label="Approval rate" value={formatPercent(r.approvalRate)} hint="Approved ÷ (approved + rejected)" />
-            <Kpi label="Avg. decision time" value={`${r.avgDecisionHours} h`} />
-            <Kpi label="Approved hours" value={`${r.approvedHours} h`} />
+            <Kpi label="Expired in queue" value={String(r.totals.expired)} hint="The slot never freed up" />
+            <Kpi label="Had to queue" value={formatPercent(r.queuedShare)} hint="Requests that joined a queue" />
+            <Kpi label="Got a slot from the queue" value={String(r.promotedCount)} />
+            <Kpi label="Avg. wait in queue" value={r.promotedCount ? `${r.avgQueueWaitHours} h` : '—'} hint="Joining the queue → slot freed" />
+            <Kpi label="Booked hours" value={`${r.bookedHours} h`} />
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
@@ -146,14 +146,14 @@ function BookingReports() {
               table={
                 <table>
                   <caption>Requests over time</caption>
-                  <thead><tr><th>Date</th><th>Submitted</th><th>Approved</th></tr></thead>
-                  <tbody>{r.trend.map((t) => <tr key={t.date}><td>{t.date}</td><td>{t.submitted}</td><td>{t.approved}</td></tr>)}</tbody>
+                  <thead><tr><th>Date</th><th>Submitted</th><th>Booked</th></tr></thead>
+                  <tbody>{r.trend.map((t) => <tr key={t.date}><td>{t.date}</td><td>{t.submitted}</td><td>{t.booked}</td></tr>)}</tbody>
                 </table>
               }
             >
               <ul className="mb-2 flex gap-4 text-[12.5px] text-muted">
                 <li className="inline-flex items-center gap-1.5"><span className="h-0.5 w-4 rounded" style={{ background: SLOT1 }} />Submitted</li>
-                <li className="inline-flex items-center gap-1.5"><span className="h-0.5 w-4 rounded" style={{ background: SLOT2 }} />Approved</li>
+                <li className="inline-flex items-center gap-1.5"><span className="h-0.5 w-4 rounded" style={{ background: SLOT2 }} />Booked</li>
               </ul>
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={r.trend} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
@@ -162,7 +162,7 @@ function BookingReports() {
                   <YAxis allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} />
                   <RTooltip content={<TooltipBox fmt={(d) => formatShortDay(d)} />} cursor={{ stroke: '#C5CDDC', strokeWidth: 1 }} />
                   <Line type="monotone" dataKey="submitted" name="Submitted" stroke={SLOT1} strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="approved" name="Approved" stroke={SLOT2} strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="booked" name="Booked" stroke={SLOT2} strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -172,17 +172,17 @@ function BookingReports() {
                 <h2 className="eyebrow mb-3">By status</h2>
                 <SegmentedBar
                   label="Bookings by status"
-                  parts={(['approved', 'pending', 'rejected', 'cancelled', 'expired'] as const).map((s) => ({ key: s, name: STATUS_LABELS[s], value: r.totals[s], color: STATUS_FILL[s]! }))}
+                  parts={(['confirmed', 'completed', 'queued', 'cancelled', 'expired'] as const).map((s) => ({ key: s, name: STATUS_LABELS[s], value: r.totals[s], color: STATUS_FILL[s]! }))}
                 />
               </div>
               <div>
                 <h2 className="eyebrow mb-3">By requester role</h2>
                 <SegmentedBar
                   label="Requests by requester role"
-                  parts={r.byRole.map((x, i) => ({ key: x.role, name: ROLE_LABELS[x.role], value: x.requests, color: i === 0 ? SLOT1 : SLOT2 }))}
+                  parts={r.byRole.map((x) => ({ key: x.role, name: ROLE_LABELS[x.role], value: x.requests, color: roleColor[x.role] }))}
                 />
                 <p className="tabular mt-2 text-[12.5px] text-muted">
-                  Approved: {r.byRole.map((x) => `${ROLE_LABELS[x.role]} ${x.approved}`).join(' · ')}
+                  Booked: {r.byRole.map((x) => `${ROLE_LABELS[x.role]} ${x.booked}`).join(' · ')}
                 </p>
               </div>
             </section>
@@ -232,13 +232,13 @@ function BookingReports() {
             </ChartCard>
 
             <ChartCard
-              title="By weekday (approved)"
+              title="By weekday (booked)"
               empty={empty}
               table={
                 <table>
-                  <caption>Approved bookings by weekday</caption>
-                  <thead><tr><th>Weekday</th><th>Approved</th></tr></thead>
-                  <tbody>{r.byWeekday.map((w) => <tr key={w.weekday}><td>{w.label}</td><td>{w.approved}</td></tr>)}</tbody>
+                  <caption>Booked by weekday</caption>
+                  <thead><tr><th>Weekday</th><th>Booked</th></tr></thead>
+                  <tbody>{r.byWeekday.map((w) => <tr key={w.weekday}><td>{w.label}</td><td>{w.booked}</td></tr>)}</tbody>
                 </table>
               }
             >
@@ -248,19 +248,19 @@ function BookingReports() {
                   <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} />
                   <YAxis allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} />
                   <RTooltip content={<TooltipBox />} cursor={{ fill: 'rgba(47,95,211,0.06)' }} />
-                  <Bar dataKey="approved" name="Approved" fill={SLOT1} radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
+                  <Bar dataKey="booked" name="Booked" fill={SLOT1} radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
 
             <ChartCard
-              title="Busiest start hours (approved)"
+              title="Busiest start hours (booked)"
               empty={empty}
               table={
                 <table>
-                  <caption>Approved bookings by start hour</caption>
-                  <thead><tr><th>Hour</th><th>Approved</th></tr></thead>
-                  <tbody>{r.byHour.map((h) => <tr key={h.hour}><td>{h.hour}:00</td><td>{h.approved}</td></tr>)}</tbody>
+                  <caption>Booked by start hour</caption>
+                  <thead><tr><th>Hour</th><th>Booked</th></tr></thead>
+                  <tbody>{r.byHour.map((h) => <tr key={h.hour}><td>{h.hour}:00</td><td>{h.booked}</td></tr>)}</tbody>
                 </table>
               }
             >
@@ -270,7 +270,7 @@ function BookingReports() {
                   <XAxis dataKey="hour" tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} tickFormatter={(h) => String(h).padStart(2, '0')} />
                   <YAxis allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} />
                   <RTooltip content={<TooltipBox fmt={(h) => `${String(h).padStart(2, '0')}:00`} />} cursor={{ fill: 'rgba(47,95,211,0.06)' }} />
-                  <Bar dataKey="approved" name="Approved" fill={SLOT1} radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
+                  <Bar dataKey="booked" name="Booked" fill={SLOT1} radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -284,8 +284,8 @@ function BookingReports() {
                   <tr>
                     {th('venueName', 'Venue')}
                     {th('requests', 'Requests')}
-                    {th('approved', 'Approved')}
-                    {th('approvedHours', 'Approved hours')}
+                    {th('booked', 'Booked')}
+                    {th('bookedHours', 'Booked hours')}
                     {th('utilizationPct', 'Utilisation %')}
                   </tr>
                 </THead>
@@ -294,8 +294,8 @@ function BookingReports() {
                     <TR key={v.venueId}>
                       <TD className="font-semibold text-ink">{v.venueName}</TD>
                       <TD className="tabular">{v.requests}</TD>
-                      <TD className="tabular">{v.approved}</TD>
-                      <TD className="tabular">{v.approvedHours}</TD>
+                      <TD className="tabular">{v.booked}</TD>
+                      <TD className="tabular">{v.bookedHours}</TD>
                       <TD>
                         <div className="flex items-center gap-2">
                           <span className="tabular w-12 text-right">{v.utilizationPct}%</span>

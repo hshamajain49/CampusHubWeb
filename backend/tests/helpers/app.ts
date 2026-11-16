@@ -102,10 +102,18 @@ export async function campusDate(n: number): Promise<string> {
   return rows[0].d;
 }
 
-export const slot = (venueId: string, date: string, startTime = '10:00', endTime = '12:00', purpose = 'Integration seminar') => ({
+export const slot = (
+  venueId: string,
+  date: string,
+  startTime = '10:00',
+  endTime = '12:00',
+  purpose = 'Integration seminar',
+  idNumber = '1RV22CS045',
+) => ({
   venueId,
   date,
   startTime,
   endTime,
   purpose,
+  idNumber,
 });

@@ -2,7 +2,7 @@
 import type { AdminBookingListItem, BookingSummary, NotificationItem, VenueSummary } from '@campushub/shared';
 
 const perms = { canEdit: true, canCancel: true, canDownloadConfirmation: false, canRebook: true };
-const adminPerms = { canApprove: true, canReject: true, canCancel: false, canDownloadConfirmation: false };
+const adminPerms = { canCancel: true, canDownloadConfirmation: false };
 
 function venue(id: string, name: string, building: string, extra: Partial<VenueSummary> = {}): VenueSummary {
   return { id, name, venueType: 'seminar_hall', building, locationDetails: null, capacity: 120, amenities: ['Projector', 'Whiteboard', 'AC'], imageUrl: null, imageThumbUrl: null, isActive: true, ...extra };
@@ -21,8 +21,9 @@ function booking(id: string, v: VenueSummary, purpose: string, extra: Partial<Bo
     durationMinutes: 120,
     purpose,
     expectedAttendees: 90,
-    status: 'pending',
-    rejectionReason: null,
+    idNumber: '1RV22CS045',
+    status: 'queued',
+    queuePosition: 2,
     cancellationReason: null,
     isUpcoming: true,
     isHappeningNow: false,
@@ -47,9 +48,11 @@ function adminItem(b: BookingSummary, requester: AdminBookingListItem['requester
     durationMinutes: b.durationMinutes,
     purpose: b.purpose,
     expectedAttendees: b.expectedAttendees,
+    idNumber: b.idNumber,
     status: b.status,
+    queuePosition: b.queuePosition,
     createdAt: b.createdAt,
-    decidedAt: null,
+    confirmedAt: null,
     version: 1,
     permissions: adminPerms,
   };
@@ -63,11 +66,11 @@ const demoVenues = [
 ];
 const demoBookings = [
   booking('db1', demoVenues[0]!, 'Department seminar on responsible AI'),
-  booking('db2', demoVenues[1]!, 'Faculty meeting', { status: 'approved', date: '2026-11-21' }),
+  booking('db2', demoVenues[1]!, 'Faculty meeting', { status: 'confirmed', queuePosition: null, date: '2026-11-21' }),
 ];
 const demoAdmin = [adminItem(demoBookings[0]!, { id: 'u1', fullName: 'Priya Sharma', email: 'priya.sharma@college.edu', role: 'student', isActive: true }, 120)];
 const demoNotes: NotificationItem[] = [
-  { id: 'n1', type: 'booking_approved', title: 'Booking approved', body: 'Seminar Hall A · Fri 20 Nov · 10:00–12:00.', bookingId: 'db1', linkPath: '/bookings/db1', isRead: false, readAt: null, createdAt: new Date(Date.now() - 5 * 60_000).toISOString() },
+  { id: 'n1', type: 'booking_confirmed', title: 'Booking confirmed', body: 'Seminar Hall A · Fri 20 Nov · 10:00–12:00.', bookingId: 'db1', linkPath: '/bookings/db1', isRead: false, readAt: null, createdAt: new Date(Date.now() - 5 * 60_000).toISOString() },
 ];
 
 // ── Worst case ───────────────────────────────────────────────────────────
@@ -89,9 +92,9 @@ const worstVenues = [
 ];
 const worstBookings = [
   booking('wb1', worstVenues[0]!, purpose500, { reference: 'BK-2026-1234567', expectedAttendees: 100000 }),
-  booking('wb2', worstVenues[1]!, 'Viv', { status: 'rejected', isUpcoming: false, rejectionReason: 'The venue is reserved for university examinations during the entire week, including the reading days before and after.' }),
-  booking('wb3', worstVenues[2]!, '<script>alert(1)</script> &amp; **bold**', { status: 'expired', isUpcoming: false }),
-  booking('wb4', worstVenues[0]!, 'Happening now check', { status: 'approved', isHappeningNow: true, date: '2026-11-09' }),
+  booking('wb2', worstVenues[1]!, 'Viv', { status: 'cancelled', queuePosition: null, isUpcoming: false, idNumber: 'EMP/2019/ENG/00042-B', cancellationReason: 'The venue is reserved for university examinations during the entire week, including the reading days before and after.' }),
+  booking('wb3', worstVenues[2]!, '<script>alert(1)</script> &amp; **bold**', { status: 'expired', queuePosition: null, isUpcoming: false }),
+  booking('wb4', worstVenues[0]!, 'Happening now check', { status: 'confirmed', queuePosition: null, isHappeningNow: true, date: '2026-11-09' }),
 ];
 const worstAdmin = [
   adminItem(worstBookings[0]!, { id: 'u1', fullName: 'Aleksandra Wiśniewska-Kowalczyk', email: 'bartholomew.fitzgerald@northwind-industries-holdings.example.com', role: 'faculty_staff', isActive: true }, 100000),
@@ -101,8 +104,8 @@ const worstAdmin = [
 const worstNotes: NotificationItem[] = [
   {
     id: 'w1',
-    type: 'booking_rejected',
-    title: 'Booking request rejected — Dr. A. P. J. Abdul Kalam Centre for Interdisciplinary Research — Main Lecture Theatre', // ~115 of 120
+    type: 'booking_cancelled',
+    title: 'Booking cancelled by the administrator — Dr. A. P. J. Abdul Kalam Centre for Interdisciplinary Research — Main Hall', // ~115 of 120
     body: `${longVenueName} · 20 Nov · 10:00–12:00. Reason: The venue is reserved for university examinations during the entire week, including the reading days before and after. Please choose another week or contact the examinations office for an exception.`,
     bookingId: 'wb1',
     linkPath: '/bookings/wb1',

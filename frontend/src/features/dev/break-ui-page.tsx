@@ -8,7 +8,6 @@ import { NotificationItem } from '@/components/common/notification-bell';
 import { RoleBadge, StatusBadge } from '@/components/common/badges';
 import { UserAvatar } from '@/components/common/small';
 import { EmptyState } from '@/components/common/states';
-import { PendingRequestCard } from '@/features/admin/approvals/approvals-page';
 import { BookingsTable } from '@/features/admin/bookings/bookings-page';
 import { fixtures, worstNames, type Dataset } from './break-ui-fixtures';
 
@@ -47,14 +46,8 @@ export default function BreakUiPage() {
           </div>
         </section>
         <section>
-          <h2 className="eyebrow mb-3">PendingRequestCard</h2>
-          {f.admin.map((b) => (
-            <PendingRequestCard key={b.id} b={b} today="2026-11-09" leaving={false} onDecide={() => {}} />
-          ))}
-        </section>
-        <section>
           <h2 className="eyebrow mb-3">BookingsTable</h2>
-          {f.admin.length ? <BookingsTable rows={f.admin} sort="createdAt:desc" onSort={() => {}} onDecide={() => {}} /> : null}
+          {f.admin.length ? <BookingsTable rows={f.admin} sort="createdAt:desc" onSort={() => {}} onCancel={() => {}} /> : null}
         </section>
         <section className="grid gap-6 md:grid-cols-2">
           <div>
@@ -73,7 +66,7 @@ export default function BreakUiPage() {
                   <UserAvatar name={n} role={ROLES[i % 3]!} size={32} />
                   <span className="min-w-0 truncate text-sm">{n}</span>
                   <RoleBadge role={ROLES[i % 3]!} />
-                  <StatusBadge status={(['pending', 'approved', 'rejected', 'cancelled', 'expired'] as const)[i % 5]!} size="sm" />
+                  <StatusBadge status={(['queued', 'confirmed', 'completed', 'cancelled', 'expired'] as const)[i % 5]!} queuePosition={i + 1} size="sm" />
                 </div>
               ))}
             </div>

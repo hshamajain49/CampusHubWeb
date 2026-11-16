@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { ArrowRight, CalendarCheck, CalendarDays, CalendarPlus, Clock, DoorOpen, History, Hourglass, MapPin, Megaphone, ThumbsUp } from 'lucide-react';
+import { ArrowRight, CalendarCheck, CalendarDays, CalendarPlus, Clock, DoorOpen, History, ListOrdered, MapPin, Megaphone, ThumbsUp } from 'lucide-react';
 import { useDocumentTitle } from '@/hooks/misc';
 import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
 import { useMe } from '@/providers/auth-provider';
@@ -66,8 +66,8 @@ export function DashboardPage() {
           </div>
         ) : (
           <>
-            <StatCard icon={Hourglass} tone="pending" label="Pending requests" value={d!.counts.pending} to="/bookings?status=pending" />
-            <StatCard icon={CalendarCheck} tone="approved" label="Upcoming bookings" value={d!.counts.upcomingApproved} to="/bookings?status=approved" />
+            <StatCard icon={CalendarCheck} tone="approved" label="Upcoming bookings" value={d!.counts.upcomingConfirmed} to="/bookings?status=confirmed" />
+            <StatCard icon={ListOrdered} tone="pending" label="In a queue" value={d!.counts.queued} to="/bookings?status=queued" />
             <StatCard icon={History} tone="neutral" label="Past & closed" value={d!.counts.history} to="/bookings/history" />
             <StatCard icon={Megaphone} tone="violet" label="Open complaints" value={d!.complaints.open} to="/complaints" />
           </>

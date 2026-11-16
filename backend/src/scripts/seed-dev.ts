@@ -89,6 +89,7 @@ async function main() {
   const ananya = ids['ananya.iyer@demo.edu']!;
   const rahul = ids['rahul.mehta@demo.edu']!;
 
+  /** Inserts like the API: confirmed, or queued behind a confirmed booking; notifications for upcoming ones. */
   async function book(
     requester: string,
     venue: string,
@@ -97,32 +98,31 @@ async function main() {
     end: string,
     purpose: string,
     attendees: number | null,
+    idNumber: string,
+    status: 'confirmed' | 'queued' = 'confirmed',
     then?: (tx: Tx, id: string) => Promise<void>,
   ) {
     await withTransaction({ actorId: requester }, async (tx) => {
       const { rows } = await tx.query<{ id: string }>(
-        `insert into public.bookings (venue_id, requester_id, booking_date, start_time, end_time, purpose, expected_attendees)
-         values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-        [venues[venue], requester, addDays(today, day), start, end, purpose, attendees],
+        `insert into public.bookings (venue_id, requester_id, booking_date, start_time, end_time, purpose, expected_attendees, id_number, status)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+        [venues[venue], requester, addDays(today, day), start, end, purpose, attendees, idNumber, status],
       );
       const id = rows[0]!.id;
-      if (day >= 0) await publish(tx, { type: 'booking.submitted', bookingId: id, actorId: requester });
+      if (day >= 0) {
+        await publish(tx, {
+          type: status === 'confirmed' ? 'booking.confirmed' : 'booking.queued',
+          bookingId: id,
+          actorId: requester,
+          data: { queuePosition: status === 'queued' ? 1 : null },
+        });
+      }
       if (then) await then(tx, id);
     });
   }
-  const approve = (note: string | null) => async (tx: Tx, id: string) => {
-    await tx.query("select set_config('app.actor_id', $1, true), set_config('app.change_note', $2, true)", [admin, note ?? '']);
-    await tx.query(`update public.bookings set status = 'approved', decided_by = $2, decided_at = now() where id = $1`, [id, admin]);
-    await publish(tx, { type: 'booking.approved', bookingId: id, actorId: admin, data: { note } });
-  };
-  const reject = (reason: string) => async (tx: Tx, id: string) => {
-    await tx.query("select set_config('app.actor_id', $1, true), set_config('app.change_note', $2, true)", [admin, reason]);
-    await tx.query(`update public.bookings set status = 'rejected', rejection_reason = $2, decided_by = $3, decided_at = now() where id = $1`, [
-      id,
-      reason,
-      admin,
-    ]);
-    await publish(tx, { type: 'booking.rejected', bookingId: id, actorId: admin, data: { note: reason } });
+  const settle = (status: 'completed' | 'expired') => async (tx: Tx, id: string) => {
+    await tx.query("select set_config('app.actor_id', '', true)");
+    await tx.query('update public.bookings set status = $2 where id = $1', [id, status]);
   };
   const cancel = (by: string, reason: string) => async (tx: Tx, id: string) => {
     await tx.query("select set_config('app.actor_id', $1, true), set_config('app.change_note', $2, true)", [by, reason]);
@@ -133,21 +133,20 @@ async function main() {
     ]);
   };
 
+  const USN = { student: '1RV22CS045', faculty: 'FAC-1024', ananya: '1RV22EC017', rahul: '1RV21ME032' };
   // Past history
-  await book(student, 'Seminar Hall A', -9, '14:00', '16:00', 'Coding club orientation for first-year students', 70, approve(null));
-  await book(faculty, 'Conference Room 1', -4, '11:00', '12:00', 'Physics department faculty meeting', 14, approve(null));
-  await book(rahul, 'Computer Lab 2', -2, '09:00', '11:00', 'Robotics society workshop: sensors 101', 45, async (tx, id) => {
-    await tx.query("update public.bookings set status = 'expired' where id = $1", [id]);
-  });
-  // Upcoming: 2 approved, 2 pending, 1 rejected, 1 cancelled (+ a few from other members)
-  await book(student, 'Seminar Hall A', 3, '10:00', '12:00', 'Department seminar on responsible AI', 90, approve('Please collect the hall keys from the admin office.'));
-  await book(faculty, 'Main Auditorium', 6, '15:00', '18:00', 'Guest lecture: frontiers in quantum materials', 420, approve(null));
-  await book(student, 'Computer Lab 2', 5, '13:00', '15:00', 'Hackathon prep session for the inter-college round', 50);
-  await book(faculty, 'Conference Room 1', 2, '09:30', '10:30', 'PhD progress review with external examiner', 8);
-  await book(ananya, 'Open Air Theatre', 9, '17:00', '20:00', 'Cultural fest rehearsal — dance and music teams', 250);
-  await book(rahul, 'Indoor Sports Hall', 4, '16:00', '18:00', 'Inter-department badminton qualifiers', 80, approve(null));
-  await book(student, 'Main Auditorium', 12, '10:00', '13:00', 'Alumni talk series: building a career in research', 300, reject('The auditorium is reserved for semester examinations that week.'));
-  await book(student, 'Seminar Hall A', 8, '14:00', '15:30', 'Study group for the networks mid-term', 25, cancel(student, 'Moved to the library discussion room'));
+  await book(student, 'Seminar Hall A', -9, '14:00', '16:00', 'Coding club orientation for first-year students', 70, USN.student, 'confirmed', settle('completed'));
+  await book(faculty, 'Conference Room 1', -4, '11:00', '12:00', 'Physics department faculty meeting', 14, USN.faculty, 'confirmed', settle('completed'));
+  await book(rahul, 'Computer Lab 2', -2, '09:00', '11:00', 'Robotics society workshop: sensors 101', 45, USN.rahul, 'queued', settle('expired'));
+  // Upcoming: confirmed bookings, one queued request behind a confirmed one, one cancelled (+ a few from other members)
+  await book(student, 'Seminar Hall A', 3, '10:00', '12:00', 'Department seminar on responsible AI', 90, USN.student);
+  await book(ananya, 'Seminar Hall A', 3, '10:30', '11:30', 'Debate society practice round', 30, USN.ananya, 'queued');
+  await book(faculty, 'Main Auditorium', 6, '15:00', '18:00', 'Guest lecture: frontiers in quantum materials', 420, USN.faculty);
+  await book(student, 'Computer Lab 2', 5, '13:00', '15:00', 'Hackathon prep session for the inter-college round', 50, USN.student);
+  await book(faculty, 'Conference Room 1', 2, '09:30', '10:30', 'PhD progress review with external examiner', 8, USN.faculty);
+  await book(ananya, 'Open Air Theatre', 9, '17:00', '20:00', 'Cultural fest rehearsal — dance and music teams', 250, USN.ananya);
+  await book(rahul, 'Indoor Sports Hall', 4, '16:00', '18:00', 'Inter-department badminton qualifiers', 80, USN.rahul);
+  await book(student, 'Seminar Hall A', 8, '14:00', '15:30', 'Study group for the networks mid-term', 25, USN.student, 'confirmed', cancel(student, 'Moved to the library discussion room'));
 
   // A maintenance block next week on the Main Auditorium
   await pool.query(

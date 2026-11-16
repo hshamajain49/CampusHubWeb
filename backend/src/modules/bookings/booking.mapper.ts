@@ -6,6 +6,7 @@ import {
   type AdminBooking,
   type AdminBookingListItem,
   type Booking,
+  type BookingStatus,
   type BookingSummary,
   type HistoryEntry,
 } from '@campushub/shared';
@@ -14,19 +15,32 @@ import { adminPermissions, memberPermissions } from '../../domain/permissions.js
 
 const iso = (d: Date | null) => (d ? new Date(d).toISOString() : null);
 
+/**
+ * The settle job moves confirmed → completed and queued → expired at most a minute or so late; reads already show
+ * the outcome so a booking never looks upcoming after it ended.
+ */
+export function effectiveStatus(status: BookingStatus, start: string, end: string, localNow: string): BookingStatus {
+  const now = localDateTimeToMinutes(localNow);
+  if (status === 'confirmed' && localDateTimeToMinutes(end) <= now) return 'completed';
+  if (status === 'queued' && localDateTimeToMinutes(start) <= now) return 'expired';
+  return status;
+}
+
 function timing(r: any, localNow: string) {
   const start = toLocalDateTime(r.date, r.start_time);
   const end = toLocalDateTime(r.date, r.end_time);
   const now = localDateTimeToMinutes(localNow);
   const s = localDateTimeToMinutes(start);
   const e = localDateTimeToMinutes(end);
-  const active = r.status === 'pending' || r.status === 'approved';
+  const status = effectiveStatus(r.status, start, end, localNow);
+  const active = status === 'confirmed' || status === 'queued';
   return {
     start,
     end,
+    status,
     durationMinutes: durationMinutes(r.start_time, r.end_time),
     isUpcoming: active && e > now,
-    isHappeningNow: r.status === 'approved' && s <= now && now < e,
+    isHappeningNow: status === 'confirmed' && s <= now && now < e,
   };
 }
 
@@ -43,12 +57,6 @@ export function mapHistory(rows: any[]): HistoryEntry[] {
   }));
 }
 
-export function approvalNoteOf(status: string, history: HistoryEntry[]): string | null {
-  if (status !== 'approved') return null;
-  for (let i = history.length - 1; i >= 0; i--) if (history[i]!.eventType === 'approved') return history[i]!.note;
-  return null;
-}
-
 export function toBookingSummary(r: any, s: AppSettings, localNow: string): BookingSummary {
   const t = timing(r, localNow);
   return {
@@ -63,20 +71,20 @@ export function toBookingSummary(r: any, s: AppSettings, localNow: string): Book
     durationMinutes: t.durationMinutes,
     purpose: r.purpose,
     expectedAttendees: r.expected_attendees,
-    status: r.status,
-    rejectionReason: r.rejection_reason,
+    idNumber: r.id_number ?? null,
+    status: t.status,
+    queuePosition: t.status === 'queued' ? (r.queue_position ?? null) : null,
     cancellationReason: r.cancellation_reason,
     isUpcoming: t.isUpcoming,
     isHappeningNow: t.isHappeningNow,
     createdAt: iso(r.created_at)!,
     updatedAt: iso(r.updated_at)!,
-    permissions: memberPermissions({ status: r.status, start: t.start, venueActive: r.venue_active }, s, localNow),
+    permissions: memberPermissions({ status: t.status, start: t.start, end: t.end, venueActive: r.venue_active }, s, localNow),
   };
 }
 
 export function toBooking(r: any, historyRows: any[], s: AppSettings, localNow: string): Booking {
   const summary = toBookingSummary(r, s, localNow);
-  const history = mapHistory(historyRows);
   return {
     ...summary,
     venue: {
@@ -95,13 +103,12 @@ export function toBooking(r: any, historyRows: any[], s: AppSettings, localNow: 
       role: r.requester_role,
       department: r.requester_department,
     },
-    decidedBy: r.decided_by ? { id: r.decided_by, fullName: r.decided_by_name } : null,
-    decidedAt: iso(r.decided_at),
-    approvalNote: approvalNoteOf(r.status, history),
+    confirmedAt: iso(r.confirmed_at),
+    queuedAt: iso(r.queued_at),
     cancelledBy: r.cancelled_by ? { id: r.cancelled_by, fullName: r.cancelled_by_name, role: r.cancelled_by_role } : null,
     cancelledAt: iso(r.cancelled_at),
     version: r.version,
-    history,
+    history: mapHistory(historyRows),
   };
 }
 
@@ -126,12 +133,14 @@ export function toAdminListItem(r: any, localNow: string): AdminBookingListItem 
     durationMinutes: t.durationMinutes,
     purpose: r.purpose,
     expectedAttendees: r.expected_attendees,
-    status: r.status,
+    idNumber: r.id_number ?? null,
+    status: t.status,
+    queuePosition: t.status === 'queued' ? (r.queue_position ?? null) : null,
     createdAt: iso(r.created_at)!,
-    decidedAt: iso(r.decided_at),
+    confirmedAt: iso(r.confirmed_at),
     version: r.version,
     permissions: adminPermissions(
-      { status: r.status, start: t.start, venueActive: r.venue_active, requesterActive: r.requester_active },
+      { status: t.status, start: t.start, end: t.end, venueActive: r.venue_active, requesterActive: r.requester_active },
       localNow,
     ),
   };
@@ -139,17 +148,14 @@ export function toAdminListItem(r: any, localNow: string): AdminBookingListItem 
 
 export function toAdminBooking(r: any, historyRows: any[], stats: { totalBookings: number; upcomingBookings: number }, localNow: string): AdminBooking {
   const item = toAdminListItem(r, localNow);
-  const history = mapHistory(historyRows);
   return {
     ...item,
     requester: { ...item.requester, department: r.requester_department, stats },
-    rejectionReason: r.rejection_reason,
     cancellationReason: r.cancellation_reason,
-    decidedBy: r.decided_by ? { id: r.decided_by, fullName: r.decided_by_name } : null,
-    approvalNote: approvalNoteOf(r.status, history),
+    queuedAt: iso(r.queued_at),
     cancelledBy: r.cancelled_by ? { id: r.cancelled_by, fullName: r.cancelled_by_name, role: r.cancelled_by_role } : null,
     cancelledAt: iso(r.cancelled_at),
     updatedAt: iso(r.updated_at)!,
-    history,
+    history: mapHistory(historyRows),
   };
 }

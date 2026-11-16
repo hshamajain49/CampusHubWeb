@@ -92,9 +92,8 @@ const RULE_KEYS: (keyof Settings)[] = [
   'maxDurationMinutes',
   'maxAdvanceDays',
   'minLeadTimeMinutes',
-  'cancellationCutoffMinutes',
   'modificationCutoffMinutes',
-  'maxPendingPerUser',
+  'maxActivePerUser',
   'complaintAutoResolveDays',
   'complaintReopenWindowDays',
   'complaintMaxOpenPerUser',
@@ -119,12 +118,11 @@ function BookingRulesTab({ s }: { s: Settings }) {
               <Select id={p.id} value={String(d.timeStepMinutes)} onValueChange={(v) => f.set('timeStepMinutes', Number(v))} options={TIME_STEPS.map((t) => ({ value: String(t), label: `${t} minutes` }))} />
             )}
           </Field>
-          <NumberField label="Max pending requests per member" hint="Simultaneous pending requests allowed." value={d.maxPendingPerUser} onChange={(v) => f.set('maxPendingPerUser', v)} error={f.errors.maxPendingPerUser} min={1} max={100} />
+          <NumberField label="Max upcoming bookings per member" hint="Confirmed bookings and queued requests that haven't happened yet." value={d.maxActivePerUser} onChange={(v) => f.set('maxActivePerUser', v)} error={f.errors.maxActivePerUser} min={1} max={100} />
           <NumberField label="Minimum duration" hint="Shortest allowed booking." unit="minutes" echo={echo(d.minDurationMinutes)} value={d.minDurationMinutes} onChange={(v) => f.set('minDurationMinutes', v)} error={f.errors.minDurationMinutes} min={5} max={1440} />
           <NumberField label="Maximum duration" hint="Longest allowed booking." unit="minutes" echo={echo(d.maxDurationMinutes)} value={d.maxDurationMinutes} onChange={(v) => f.set('maxDurationMinutes', v)} error={f.errors.maxDurationMinutes} min={5} max={1440} />
           <NumberField label="Maximum advance" hint="Latest bookable date is today + this many days." unit="days" value={d.maxAdvanceDays} onChange={(v) => f.set('maxAdvanceDays', v)} error={f.errors.maxAdvanceDays} min={1} max={730} />
           <NumberField label="Minimum lead time" hint="Bookings must start later than now + this." unit="minutes" echo={echo(d.minLeadTimeMinutes)} value={d.minLeadTimeMinutes} onChange={(v) => f.set('minLeadTimeMinutes', v)} error={f.errors.minLeadTimeMinutes} min={0} max={20160} />
-          <NumberField label="Cancellation cut-off" hint="Members may cancel an approved booking until start − this." unit="minutes before start" echo={echo(d.cancellationCutoffMinutes)} value={d.cancellationCutoffMinutes} onChange={(v) => f.set('cancellationCutoffMinutes', v)} error={f.errors.cancellationCutoffMinutes} min={0} max={20160} />
           <NumberField label="Modification cut-off" hint="Members may edit until start − this." unit="minutes before start" echo={echo(d.modificationCutoffMinutes)} value={d.modificationCutoffMinutes} onChange={(v) => f.set('modificationCutoffMinutes', v)} error={f.errors.modificationCutoffMinutes} min={0} max={20160} />
         </div>
         <div className="grid gap-4 border-t border-border pt-5">
@@ -290,7 +288,7 @@ function NotificationsTab({ s }: { s: Settings }) {
         <p className="tabular -mt-2 text-[12.5px] text-muted">
           Sent today: {s.emailUsageToday.sent} · Skipped (limit): {s.emailUsageToday.skipped} · Password resets: {s.emailUsageToday.authSent}
         </p>
-        <Field label="Booking reminder" hint="Approved bookings get a reminder this long before they start." error={f.errors.reminderLeadMinutes}>
+        <Field label="Booking reminder" hint="Confirmed bookings get a reminder this long before they start." error={f.errors.reminderLeadMinutes}>
           {(p) => (
             <Select
               id={p.id}

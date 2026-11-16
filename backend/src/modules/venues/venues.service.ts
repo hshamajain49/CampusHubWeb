@@ -13,7 +13,7 @@ import { appError } from '../../errors/app-error.js';
 import { imageUrls } from '../../lib/image-store.js';
 import { loadCampus } from '../../domain/settings.js';
 import { slotRulesOf } from '../../domain/booking-rules.js';
-import { blockInterval, bookingInterval, findConflicts, toLdt } from '../bookings/booking.queries.js';
+import { blockInterval, bookingInterval, findConflicts, QUEUE_POSITION_SQL, toLdt, UPCOMING_SQL } from '../bookings/booking.queries.js';
 
 const iso = (d: Date) => new Date(d).toISOString();
 
@@ -67,7 +67,7 @@ export async function listActiveVenues(q: {
   if (q.availableDate && q.availableStart && q.availableEnd) {
     const range = `tsrange(${w.param(q.availableDate)}::date + ${w.param(q.availableStart)}::time, ${w.param(q.availableDate)}::date + ${w.param(q.availableEnd)}::time, '[)')`;
     w.add(
-      `not exists (select 1 from public.bookings b where b.venue_id = v.id and b.status in ('pending','approved') and b.slot && ${range})`,
+      `not exists (select 1 from public.bookings b where b.venue_id = v.id and b.status = 'confirmed' and b.slot && ${range})`,
     );
     w.add(`not exists (select 1 from public.venue_blocks vb where vb.venue_id = v.id and vb.period && ${range})`);
   }
@@ -105,18 +105,26 @@ export async function venueAvailability(venueId: string, actorId: string, q: { f
   const campus = await loadCampus(pool);
   const from = q.from ?? campus.today;
   const to = q.to ?? addDays(from, 6);
+  // Confirmed bookings hold time (with how many requests queue behind them); the viewer also sees their own queued
+  // requests. Other members' queued requests stay private.
   const { rows } = await pool.query(
     `with r as (select tsrange($2::date::timestamp, ($3::date + 1)::timestamp, '[)') as rng)
      select 'booking' as source, b.id, b.status, lower(b.slot)::text as s, upper(b.slot)::text as e,
-            (b.requester_id = $4) as is_mine, null::text as block_type, null::text as reason
+            (b.requester_id = $4) as is_mine, null::text as block_type, null::text as reason,
+            case when b.status = 'confirmed' then (
+              select count(*) from public.bookings q
+               where q.venue_id = b.venue_id and q.status = 'queued' and q.slot && b.slot and lower(q.slot) > $5::timestamp)
+            else 0 end as queue_length,
+            ${QUEUE_POSITION_SQL} as queue_position
        from public.bookings b, r
-      where b.venue_id = $1 and b.status in ('pending','approved') and b.slot && r.rng
+      where b.venue_id = $1 and b.slot && r.rng
+        and (b.status = 'confirmed' or (b.status = 'queued' and b.requester_id = $4 and lower(b.slot) > $5::timestamp))
      union all
-     select 'block', vb.id, null, vb.starts_at::text, vb.ends_at::text, false, vb.block_type, vb.reason
+     select 'block', vb.id, null, vb.starts_at::text, vb.ends_at::text, false, vb.block_type, vb.reason, 0, null
        from public.venue_blocks vb, r
       where vb.venue_id = $1 and vb.period && r.rng
      order by 4`,
-    [venueId, from, to, actorId],
+    [venueId, from, to, actorId, campus.localNow.replace('T', ' ')],
   );
   return {
     venueId,
@@ -128,7 +136,7 @@ export async function venueAvailability(venueId: string, actorId: string, q: { f
     intervals: rows.map((r) =>
       r.source === 'block'
         ? blockInterval(r.block_type, r.reason, toLdt(r.s), toLdt(r.e))
-        : bookingInterval(r.status, toLdt(r.s), toLdt(r.e), r.is_mine, r.id),
+        : bookingInterval(r.status, toLdt(r.s), toLdt(r.e), r.is_mine, r.id, { queueLength: r.queue_length, queuePosition: r.queue_position }),
     ),
   };
 }
@@ -146,28 +154,65 @@ export async function availabilityCheck(
     message: v.message,
   }));
 
-  let exclude: string | null = null;
+  // Editing: the booking being changed doesn't conflict with itself, and a confirmed booking may only move to a free time.
+  let exclude: { id: string; status: string } | null = null;
   if (q.excludeBookingId) {
-    const own = await pool.query('select 1 from public.bookings where id = $1 and requester_id = $2', [q.excludeBookingId, actorId]);
-    if (own.rowCount) exclude = q.excludeBookingId;
+    const own = await pool.query<{ id: string; status: string }>('select id, status from public.bookings where id = $1 and requester_id = $2', [
+      q.excludeBookingId,
+      actorId,
+    ]);
+    exclude = own.rows[0] ?? null;
   } else {
-    const pending = (
-      await pool.query<{ n: number }>("select count(*) as n from public.bookings where requester_id = $1 and status = 'pending'", [actorId])
+    const active = (
+      await pool.query<{ n: number }>(`select count(*) as n from public.bookings b where b.requester_id = $1 and ${UPCOMING_SQL('$2::timestamp')}`, [
+        actorId,
+        campus.localNow.replace('T', ' '),
+      ])
     ).rows[0]!.n;
-    if (pending >= campus.settings.maxPendingPerUser) {
+    if (active >= campus.settings.maxActivePerUser) {
       violations.push({
-        code: 'PENDING_LIMIT_REACHED',
+        code: 'BOOKING_LIMIT_REACHED',
         field: 'startTime',
-        message: `You already have ${pending} pending requests, the maximum allowed.`,
+        message: `You already have ${active} upcoming bookings, the maximum allowed. Cancel one before booking again.`,
       });
     }
   }
 
   const conflicts = [] as AvailabilityCheck['conflicts'];
+  let taken = false;
+  let queuePosition: number | null = null;
   if (q.endTime > q.startTime) {
-    const c = await findConflicts(pool, venueId, q.date, q.startTime, q.endTime, actorId, exclude);
+    const c = await findConflicts(pool, venueId, q.date, q.startTime, q.endTime, actorId, exclude?.id ?? null);
     for (const b of c.blocks) conflicts.push(blockInterval(b.blockType, b.reason, b.start, b.end));
     conflicts.push(...c.bookings);
+    const own = c.own[0];
+    if (own) {
+      violations.push({
+        code: 'DUPLICATE_BOOKING',
+        field: 'startTime',
+        message: own.status === 'queued'
+          ? `You're already in the queue for this venue at this time (${own.reference}).`
+          : `You already have this venue booked at this time (${own.reference}).`,
+      });
+    }
+    taken = c.bookings.length > 0;
+    if (taken && exclude?.status === 'confirmed') {
+      violations.push({
+        code: 'BOOKING_CONFLICT',
+        field: 'startTime',
+        message: 'That time is already booked. A confirmed booking can only move to a free time.',
+      });
+    }
+    if (taken) queuePosition = c.queueLength + 1;
+    if (c.blocks.length) taken = true;
   }
-  return { available: violations.length === 0 && conflicts.length === 0, violations, conflicts };
+  const blocked = conflicts.some((x) => x.kind === 'blocked');
+  const available = violations.length === 0 && !blocked;
+  return {
+    available,
+    outcome: !available ? 'unavailable' : taken ? 'queue' : 'confirm',
+    queuePosition: available && taken ? queuePosition : null,
+    violations,
+    conflicts,
+  };
 }

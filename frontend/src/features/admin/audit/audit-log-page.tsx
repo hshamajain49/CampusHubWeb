@@ -31,7 +31,7 @@ const ENTITY = [
 ];
 const ACTIONS = [
   { value: 'all', label: 'All actions' },
-  { value: 'booking.', label: 'Booking decisions' },
+  { value: 'booking.', label: 'Bookings' },
   { value: 'venue.', label: 'Venue changes' },
   { value: 'venue_block.', label: 'Venue blocks' },
   { value: 'user.', label: 'User changes' },

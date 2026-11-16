@@ -16,6 +16,7 @@ import { loadCampus } from '../../domain/settings.js';
 import { audit } from '../audit/audit-writer.js';
 import { closeBookings } from '../admin-venues/admin-venues.service.js';
 import { toLdt } from '../bookings/booking.queries.js';
+import { promoteAndNotify } from '../bookings/bookings.service.js';
 
 const BLOCK_SELECT = `
   select vb.*, vb.starts_at::text as s, vb.ends_at::text as e, v.name as venue_name, p.full_name as created_by_name
@@ -80,7 +81,7 @@ interface BlockInput {
 
 async function saveBlock(actor: Actor, input: BlockInput, existingId: string | null) {
   let blockId = existingId;
-  let affected = { rejected: 0, cancelled: 0, references: [] as string[] };
+  let affected = { cancelled: 0, references: [] as string[] };
   try {
     await withTransaction({ actorId: actor.id }, async (tx) => {
       const venue = (await tx.query('select * from public.venues where id = $1 for update', [input.venueId])).rows[0];
@@ -105,7 +106,7 @@ async function saveBlock(actor: Actor, input: BlockInput, existingId: string | n
           `select b.id, b.reference, b.status, b.booking_date as date, to_char(b.start_time, 'HH24:MI') as st,
                   to_char(b.end_time, 'HH24:MI') as et, p.id as requester_id, p.full_name
              from public.bookings b join public.profiles p on p.id = b.requester_id
-            where b.venue_id = $1 and b.status in ('pending','approved')
+            where b.venue_id = $1 and b.status in ('confirmed','queued')
               and b.slot && tsrange($2::timestamp, $3::timestamp, '[)')
             order by b.booking_date, b.start_time
             for update of b`,
@@ -146,6 +147,8 @@ async function saveBlock(actor: Actor, input: BlockInput, existingId: string | n
         );
         blockId = ins.rows[0]!.id;
       }
+      // A cancelled booking may have reached past the block: that part of its time goes to the queue.
+      if (overlapping.length) await promoteAndNotify(tx, input.venueId, actor.id);
       await audit(tx, actor, {
         action: existingId ? 'venue_block.updated' : 'venue_block.created',
         entityType: 'venue_block',

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Ban, Bell, BellRing, CircleCheck, CircleX, Inbox, PencilLine, TimerOff } from 'lucide-react';
+import { Ban, Bell, BellRing, CircleCheck, CircleX, Inbox, ListOrdered, PartyPopper, PencilLine, TimerOff } from 'lucide-react';
 import type { NotificationItem as Item, NotificationType } from '@campushub/shared';
 import { cn } from '@/lib/utils';
 import { timeAgo } from '@/lib/format';
@@ -11,14 +11,19 @@ import { Skeleton } from '@/components/ui/controls';
 import { useMarkAllRead, useMarkRead, useNotifications, useUnreadCount } from '@/features/notifications/api';
 
 const TYPE: Record<NotificationType, { icon: typeof Bell; cls: string }> = {
-  booking_approved: { icon: CircleCheck, cls: 'bg-success-soft text-success-text' },
-  booking_rejected: { icon: CircleX, cls: 'bg-destructive-soft text-destructive-text' },
+  booking_confirmed: { icon: CircleCheck, cls: 'bg-success-soft text-success-text' },
+  booking_queued: { icon: ListOrdered, cls: 'bg-[#FDF4DC] text-[#7A5A00]' },
+  booking_promoted: { icon: PartyPopper, cls: 'bg-success-soft text-success-text' },
   booking_cancelled: { icon: Ban, cls: 'bg-surface-muted text-[#4A5468]' },
   booking_expired: { icon: TimerOff, cls: 'bg-[#FDEEDD] text-[#9A5410]' },
   booking_reminder: { icon: BellRing, cls: 'bg-primary-soft text-primary' },
-  admin_new_request: { icon: Inbox, cls: 'bg-primary-soft text-primary' },
+  admin_new_booking: { icon: Inbox, cls: 'bg-primary-soft text-primary' },
   admin_request_modified: { icon: PencilLine, cls: 'bg-secondary-soft text-secondary-text' },
   admin_booking_cancelled: { icon: Ban, cls: 'bg-surface-muted text-[#4A5468]' },
+  // written before approvals were retired
+  booking_approved: { icon: CircleCheck, cls: 'bg-success-soft text-success-text' },
+  booking_rejected: { icon: CircleX, cls: 'bg-destructive-soft text-destructive-text' },
+  admin_new_request: { icon: Inbox, cls: 'bg-primary-soft text-primary' },
 };
 
 export function NotificationItem({ n, onOpen, className }: { n: Item; onOpen: (n: Item) => void; className?: string }) {

@@ -29,7 +29,6 @@ import {
   adminCancelBody,
   adminExportQuery,
   adminVenuesQuery,
-  approveBody,
   auditQuery,
   availabilityCheckQuery,
   availabilityQuery,
@@ -52,7 +51,6 @@ import {
   pushSubscriptionBody,
   pushUnsubscribeBody,
   registerBody,
-  rejectBody,
   reportsQuery,
   settingsUpdateBody,
   updateMeBody,
@@ -352,12 +350,6 @@ function adminRouter() {
   });
   r.get('/bookings/:bookingId', validate({ params: bookingIdParam }), async (req, res) => {
     res.json({ data: await adminBookings.getAdminBooking(req.valid.params.bookingId) });
-  });
-  r.post('/bookings/:bookingId/approve', validate({ params: bookingIdParam, body: approveBody }), async (req, res) => {
-    res.json({ data: await adminBookings.approveBooking(actorOf(req), req.valid.params.bookingId, req.valid.body) });
-  });
-  r.post('/bookings/:bookingId/reject', validate({ params: bookingIdParam, body: rejectBody }), async (req, res) => {
-    res.json({ data: await adminBookings.rejectBooking(actorOf(req), req.valid.params.bookingId, req.valid.body) });
   });
   r.post('/bookings/:bookingId/cancel', validate({ params: bookingIdParam, body: adminCancelBody }), async (req, res) => {
     res.json({ data: await adminBookings.adminCancelBooking(actorOf(req), req.valid.params.bookingId, req.valid.body) });

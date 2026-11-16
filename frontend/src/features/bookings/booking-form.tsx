@@ -6,7 +6,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import { CalendarCheck2, CircleCheck, CircleX, Clock, Info, MapPin, Send, Sun, TriangleAlert, Users } from 'lucide-react';
+import { CalendarCheck2, CircleCheck, CircleX, Clock, Info, ListOrdered, MapPin, Sun, TriangleAlert, Users } from 'lucide-react';
 import {
   ROLE_LABELS,
   addDays,
@@ -45,9 +45,11 @@ import { VenueCombobox } from './venue-combobox';
 type ServerAlert = { variant: 'error' | 'warning'; title: string; body?: React.ReactNode; action?: React.ReactNode } | null;
 
 function intervalText(i: AvailabilityInterval) {
-  const kind = i.isMine ? 'Your pending request' : i.kind === 'booked' ? 'Booked' : i.kind === 'on_hold' ? 'On hold' : i.label;
+  const kind = i.isMine ? (i.kind === 'queued' ? 'Your queued request' : 'Your booking') : i.kind === 'booked' ? 'Booked' : i.label;
   return `${i.start.slice(11, 16)}–${i.end.slice(11, 16)} · ${kind}`;
 }
+
+const ID_PLACEHOLDER: Record<string, string> = { student: 'e.g. 1RV22CS045', faculty_staff: 'e.g. FAC-1024', department_staff: 'e.g. STF-0042' };
 
 export function BookingForm({
   mode,
@@ -100,7 +102,10 @@ export function BookingForm({
   const debouncedSlot = useDebouncedValue(slot, 400);
   const sameSlot = JSON.stringify(slot) === JSON.stringify(debouncedSlot);
   const check = useAvailabilityCheck(venue?.id, debouncedSlot);
-  const hardConflict = !!slot && sameSlot && !!check.data && check.data.conflicts.length > 0;
+  // A booked time only queues the request; blocks, rule violations and (when editing a confirmed booking) a booked
+  // time stop it.
+  const hardConflict = !!slot && sameSlot && !!check.data && check.data.outcome === 'unavailable';
+  const willQueue = !!slot && sameSlot && check.data?.outcome === 'queue';
 
   // Unsaved-changes guard (D-14).
   const blocker = useBlocker(({ currentLocation, nextLocation }) => isDirty && !done && !isSubmitting && currentLocation.pathname !== nextLocation.pathname);
@@ -185,15 +190,25 @@ export function BookingForm({
             </Button>
           ),
         });
-      case 'PENDING_LIMIT_REACHED':
+      case 'BOOKING_LIMIT_REACHED':
         return setServerAlert({
           variant: 'warning',
           title: err.message,
           action: (
             <Button size="sm" variant="outline" asChild>
-              <Link to="/bookings?status=pending">My bookings</Link>
+              <Link to="/bookings">My bookings</Link>
             </Button>
           ),
+        });
+      case 'DUPLICATE_BOOKING':
+        return setServerAlert({
+          variant: 'warning',
+          title: err.message,
+          action: d.bookingId ? (
+            <Button size="sm" variant="outline" asChild>
+              <Link to={`/bookings/${d.bookingId}`}>View it</Link>
+            </Button>
+          ) : undefined,
         });
       case 'BOOKING_CHANGED':
         return setChangedDialog(true);
@@ -230,12 +245,18 @@ export function BookingForm({
           navigate(`/bookings/${b.id}/submitted`, { replace: true });
         } else if (booking) {
           const body: Record<string, unknown> = { version: booking.version };
-          for (const k of ['date', 'startTime', 'endTime', 'purpose', 'expectedAttendees'] as const) {
+          for (const k of ['date', 'startTime', 'endTime', 'purpose', 'expectedAttendees', 'idNumber'] as const) {
             if (dirtyFields[k] && v[k] !== initial[k]) body[k] = v[k];
           }
           const b = await update.mutateAsync(body);
           setDone(true);
-          toast.success(booking.status === 'approved' && b.status === 'pending' ? 'Booking updated — pending re-approval.' : 'Booking updated.');
+          toast.success(
+            booking.status === 'queued' && b.status === 'confirmed'
+              ? 'Moved to a free time: your booking is confirmed.'
+              : b.status === 'queued' && (body.date || body.startTime || body.endTime)
+                ? `Booking updated. You're #${b.queuePosition ?? '?'} in the queue for the new time.`
+                : 'Booking updated.',
+          );
           navigate(`/bookings/${booking.id}`, { replace: true });
         }
       } catch (err) {
@@ -258,16 +279,27 @@ export function BookingForm({
     if (check.isError) return null;
     const c = check.data;
     if (!c) return null;
-    if (c.available)
+    if (c.outcome === 'confirm')
       return (
         <span className="inline-flex items-center gap-1.5 font-semibold text-success-text">
-          <CircleCheck className="size-4" /> This time is available
+          <CircleCheck className="size-4" /> This time is free: it will be confirmed instantly
         </span>
       );
-    if (c.conflicts.length)
+    if (c.outcome === 'queue')
+      return (
+        <span className="inline-flex items-start gap-1.5 font-semibold text-warning-text">
+          <ListOrdered className="mt-px size-4 shrink-0" />
+          <span>
+            Already booked ({c.conflicts.map(intervalText).join(', ')}). You'll join the queue as #{c.queuePosition ?? 1}, and get the slot
+            automatically if it frees up.
+          </span>
+        </span>
+      );
+    const blocked = c.conflicts.filter((x) => x.kind === 'blocked');
+    if (blocked.length)
       return (
         <span className="inline-flex items-start gap-1.5 font-semibold text-destructive-text">
-          <CircleX className="mt-px size-4 shrink-0" /> Conflicts with {c.conflicts.map(intervalText).join(', ')}
+          <CircleX className="mt-px size-4 shrink-0" /> Unavailable: {blocked.map(intervalText).join(', ')}
         </span>
       );
     return (
@@ -296,9 +328,13 @@ export function BookingForm({
             </span>
           </div>
         )}
-        <p className="eyebrow mt-5">What happens next</p>
+        <p className="eyebrow mt-5">How booking works</p>
         <ol className="mt-2.5 grid gap-2.5">
-          {['The administrator reviews your request.', "You'll see the decision under My bookings.", 'Once approved, download your confirmation.'].map((t, i) => (
+          {[
+            'A free time is confirmed instantly: no approval needed.',
+            "A booked time puts you in the queue, first come, first served. If it frees up, it's yours automatically.",
+            'Cancel any time from My bookings; the next person in the queue gets the slot.',
+          ].map((t, i) => (
             <li key={t} className="flex gap-2.5 text-[13px] leading-5 text-ink">
               <span className="tabular grid size-5 shrink-0 place-items-center rounded-full bg-primary-soft text-[11px] font-bold text-primary">{i + 1}</span>
               {t}
@@ -328,7 +364,7 @@ export function BookingForm({
 
       <form onSubmit={onSubmit} noValidate className="card relative grid gap-5 p-5 md:p-6 lg:col-span-7">
         <div>
-          <h2 className="font-display text-[17px] font-semibold text-ink">{mode === 'create' ? 'Request a booking' : 'Your booking'}</h2>
+          <h2 className="font-display text-[17px] font-semibold text-ink">{mode === 'create' ? 'Booking details' : 'Your booking'}</h2>
           <p className="mt-0.5 text-[13px] text-muted">Fields marked optional can be left empty.</p>
         </div>
 
@@ -354,6 +390,25 @@ export function BookingForm({
             </Link>
           </div>
         </div>
+
+        <Field
+          label="USN / Faculty ID"
+          error={errors.idNumber?.message}
+          hint={me.role === 'student' ? 'Your university seat number (USN).' : 'Your faculty or staff ID number.'}
+        >
+          {(p) => (
+            <Input
+              {...p}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={30}
+              placeholder={ID_PLACEHOLDER[me.role] ?? 'e.g. 1RV22CS045'}
+              className="font-mono uppercase placeholder:normal-case sm:max-w-[260px]"
+              {...form.register('idNumber')}
+            />
+          )}
+        </Field>
 
         <Field
           label="Venue"
@@ -519,8 +574,8 @@ export function BookingForm({
             {mode === 'create' ? 'Cancel' : 'Discard'}
           </Button>
           <Button type="submit" size="lg" className="flex-1 sm:flex-none" loading={isSubmitting} disabled={hardConflict || (mode === 'edit' && !isDirty)}>
-            {mode === 'create' ? <Send /> : <CalendarCheck2 />}
-            {mode === 'create' ? 'Submit request' : 'Save changes'}
+            {mode === 'create' && willQueue ? <ListOrdered /> : <CalendarCheck2 />}
+            {mode === 'create' ? (willQueue ? 'Join the queue' : 'Book now') : 'Save changes'}
           </Button>
         </div>
       </form>

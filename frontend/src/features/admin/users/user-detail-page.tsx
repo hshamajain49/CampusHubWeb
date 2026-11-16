@@ -217,10 +217,10 @@ export default function UserDetailPage() {
               {[
                 ['Total', c.total],
                 ['Upcoming', c.upcoming],
-                ['Pending', c.pending],
-                ['Approved', c.approved],
-                ['Rejected', c.rejected],
-                ['Cancelled', c.cancelled + c.expired],
+                ['In queue', c.queued],
+                ['Completed', c.completed],
+                ['Cancelled', c.cancelled],
+                ['Expired', c.expired],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-[10px] bg-surface-muted px-2 py-2.5">
                   <dd className="tabular font-display text-[18px] font-semibold text-ink">{v}</dd>
@@ -266,10 +266,10 @@ export default function UserDetailPage() {
           toast.success(r.affected.cancelled ? `Account deactivated. ${r.affected.cancelled} bookings were cancelled.` : 'Account deactivated.');
         }}
       >
-        {c.upcoming + c.pending > 0 && (
+        {c.upcoming > 0 && (
           <label className="flex items-start gap-2.5 rounded-[12px] border border-border p-3.5 text-[13px] text-ink">
             <Checkbox checked={cancelAll} onCheckedChange={(v) => setCancelAll(!!v)} className="mt-0.5" />
-            Also cancel their {c.upcoming} upcoming bookings and pending requests
+            Also cancel their {c.upcoming} upcoming bookings and queued requests (freed slots go to the queue)
           </label>
         )}
       </ConfirmDialog>

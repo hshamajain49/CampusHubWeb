@@ -72,7 +72,7 @@ export async function truncateAll() {
   await resetComplaintSetup();
   await pool.query(
     `update app_settings set campus_timezone = 'UTC', self_registration_enabled = true, allowed_email_domains = '{}',
-            max_pending_per_user = 5, min_lead_time_minutes = 0, cancellation_cutoff_minutes = 0,
+            max_active_per_user = 5, min_lead_time_minutes = 0,
             modification_cutoff_minutes = 0, complaint_auto_resolve_days = 7, complaint_reopen_window_days = 7,
             complaint_max_open_per_user = 10 where id = 1`,
   );

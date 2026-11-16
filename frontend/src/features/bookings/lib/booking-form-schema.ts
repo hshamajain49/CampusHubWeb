@@ -1,7 +1,7 @@
 // Settings-dependent form schema (§9.7): static shapes from @campushub/shared + superRefine with the same
 // pure slot rules the API runs, so the user hears about problems before submitting.
 import { z } from 'zod';
-import { attendeesSchema, cleanText, collectSlotViolations, type BookingRules } from '@campushub/shared';
+import { attendeesSchema, cleanText, collectSlotViolations, ID_NUMBER_PATTERN, type BookingRules } from '@campushub/shared';
 
 export function buildBookingFormSchema(rules: BookingRules | undefined, capacity: number | null, localNow: string | null, venueName?: string) {
   return z
@@ -15,6 +15,17 @@ export function buildBookingFormSchema(rules: BookingRules | undefined, capacity
         .transform(cleanText)
         .pipe(z.string().min(1, 'Please describe the purpose').min(3, 'Purpose must be at least 3 characters.').max(500, 'Purpose must be at most 500 characters.')),
       expectedAttendees: z.union([attendeesSchema, z.null()]),
+      // Same rule as the API (idNumberSchema): stored upper case.
+      idNumber: z
+        .string()
+        .transform((s) => s.trim().toUpperCase())
+        .pipe(
+          z
+            .string()
+            .min(1, 'Enter your USN or faculty ID')
+            .max(30, 'Use at most 30 characters')
+            .regex(ID_NUMBER_PATTERN, 'Use 3–30 letters or digits ("-", "/" and "." are allowed)'),
+        ),
     })
     .superRefine((v, ctx) => {
       if (rules && localNow && v.date && v.startTime && v.endTime) {
@@ -35,4 +46,6 @@ export type BookingFormValues = {
   endTime: string;
   purpose: string;
   expectedAttendees: number | null;
+  /** USN (students) or faculty / staff ID. */
+  idNumber: string;
 };

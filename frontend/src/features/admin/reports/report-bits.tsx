@@ -22,7 +22,8 @@ export const SLOT1 = '#2F5FD3';
 export const SLOT2 = '#14A39A';
 export const GRID = '#EEF1F6';
 export const AXIS = { fontSize: 11.5, fill: '#5E6A82' };
-export const STATUS_FILL: Record<string, string> = { approved: '#1F9D63', pending: '#D9A10B', rejected: '#DC4A4A', cancelled: '#7C879C', expired: '#EA8A1E' };
+/** Booking status colours (badge hues). Cancelled stays grey on purpose: it reads as "inactive". */
+export const STATUS_FILL: Record<string, string> = { confirmed: '#1F9D63', completed: '#2F5FD3', queued: '#D9A10B', cancelled: '#7C879C', expired: '#EA8A1E' };
 
 export function ChartCard({
   title,

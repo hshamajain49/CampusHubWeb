@@ -44,6 +44,23 @@ export function freeSlot(seed = Date.now()) {
 }
 
 /**
+ * Cancels upcoming bookings left by earlier e2e runs (purpose starts with "E2E "), so a run that failed half-way never
+ * pushes the demo members over the upcoming-bookings limit. Local test database only (DATABASE_URL in e2e/.env).
+ */
+export async function cleanE2eBookings() {
+  const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(
+      `update bookings set status = 'cancelled', cancelled_by = requester_id, cancelled_at = now(), cancellation_reason = 'E2E clean-up'
+        where purpose like 'E2E %' and status in ('confirmed', 'queued')`,
+    );
+  } finally {
+    await db.end();
+  }
+}
+
+/**
  * Removes complaints created by earlier e2e runs (titles start with "E2E " or "Mobile E2E "), so reruns never hit the
  * open-complaint limit. Local test database only (DATABASE_URL in e2e/.env); their photo objects are left for the sweep.
  */

@@ -12,22 +12,37 @@ export const ROLE_LABELS: Record<Role, string> = {
   super_admin: 'Super Admin',
 };
 
-export const BOOKING_STATUSES = ['pending', 'approved', 'rejected', 'cancelled', 'expired'] as const;
+/**
+ * Bookings need no approval (docs/BOOKINGS.md): the first valid request for a slot is confirmed, overlapping requests
+ * queue first-in, first-out and are promoted automatically when the slot frees up.
+ */
+export const BOOKING_STATUSES = ['confirmed', 'queued', 'completed', 'cancelled', 'expired'] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
-export const ACTIVE_STATUSES = ['pending', 'approved'] as const satisfies readonly BookingStatus[];
-export const FINAL_STATUSES = ['rejected', 'cancelled', 'expired'] as const satisfies readonly BookingStatus[];
+/** Upcoming bookings that still hold (confirmed) or wait for (queued) a slot. */
+export const ACTIVE_STATUSES = ['confirmed', 'queued'] as const satisfies readonly BookingStatus[];
+export const FINAL_STATUSES = ['completed', 'cancelled', 'expired'] as const satisfies readonly BookingStatus[];
 export const STATUS_LABELS: Record<BookingStatus, string> = {
-  pending: 'Pending Approval',
-  approved: 'Approved',
-  rejected: 'Rejected',
+  confirmed: 'Confirmed',
+  queued: 'In Queue',
+  completed: 'Completed',
   cancelled: 'Cancelled',
   expired: 'Expired',
 };
+/** Statuses that only appear in history written before approvals were retired. */
+export const LEGACY_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending Approval',
+  approved: 'Approved',
+  rejected: 'Rejected',
+};
+/** Label for any status found in data, including legacy history rows. */
+export function statusLabel(s: string): string {
+  return STATUS_LABELS[s as BookingStatus] ?? LEGACY_STATUS_LABELS[s] ?? s;
+}
 export function isActiveStatus(s: BookingStatus): boolean {
-  return s === 'pending' || s === 'approved';
+  return s === 'confirmed' || s === 'queued';
 }
 export function isFinalStatus(s: BookingStatus): boolean {
-  return s === 'rejected' || s === 'cancelled' || s === 'expired';
+  return s === 'completed' || s === 'cancelled' || s === 'expired';
 }
 
 export const VENUE_TYPES = [
@@ -60,21 +75,39 @@ export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   other: 'Other',
 };
 
-export const HISTORY_EVENTS = ['submitted', 'modified', 'approved', 'rejected', 'cancelled', 'expired'] as const;
+export const HISTORY_EVENTS = [
+  'confirmed',
+  'queued',
+  'promoted',
+  'modified',
+  'cancelled',
+  'expired',
+  'completed',
+  // history written before approvals were retired
+  'submitted',
+  'approved',
+  'rejected',
+] as const;
 export type HistoryEvent = (typeof HISTORY_EVENTS)[number];
 
-export const AVAILABILITY_KINDS = ['booked', 'on_hold', 'blocked'] as const;
+/** booked = a confirmed booking holds the time; queued = the viewer's own queued request; blocked = venue block. */
+export const AVAILABILITY_KINDS = ['booked', 'queued', 'blocked'] as const;
 export type AvailabilityKind = (typeof AVAILABILITY_KINDS)[number];
 
 export const NOTIFICATION_TYPES = [
-  'booking_approved',
-  'booking_rejected',
+  'booking_confirmed',
+  'booking_queued',
+  'booking_promoted',
   'booking_cancelled',
   'booking_expired',
   'booking_reminder',
-  'admin_new_request',
+  'admin_new_booking',
   'admin_request_modified',
   'admin_booking_cancelled',
+  // written before approvals were retired; still listed in the 180-day notification history
+  'booking_approved',
+  'booking_rejected',
+  'admin_new_request',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -92,9 +125,10 @@ export const AUDIT_ENTITY_TYPES = [
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
+  'booking.cancelled_by_admin': 'Cancelled booking',
+  // retired with approvals; kept so old audit entries still read well
   'booking.approved': 'Approved booking',
   'booking.rejected': 'Rejected booking',
-  'booking.cancelled_by_admin': 'Cancelled booking',
   'venue.created': 'Created venue',
   'venue.updated': 'Updated venue',
   'venue.activated': 'Activated venue',

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { Ban, Check, Download, Eye, FileDown, MoreHorizontal, Search, SlidersHorizontal, X } from 'lucide-react';
+import { Ban, Download, Eye, FileDown, MoreHorizontal, Search, SlidersHorizontal, X } from 'lucide-react';
 import { addDays, type AdminBookingListItem, type BookingStatus } from '@campushub/shared';
 import { cn } from '@/lib/utils';
 import { formatDate, formatTimeRange, formatTimestamp, timeAgo } from '@/lib/format';
@@ -21,19 +21,19 @@ import { Pagination, Segmented } from '@/components/common/small';
 import { DatePicker } from '@/components/common/pickers';
 import { BookingDateBlock } from '@/components/common/booking-visuals';
 import { useAdminBookings, useAllVenueOptions, type AdminBookingsParams } from '../api';
-import { DecisionDialog, type DecisionMode } from './decision-dialogs';
+import { CancelBookingDialog } from './cancel-booking-dialog';
 import { patchParams } from '@/lib/search-params';
 
 const TABS: { value: 'all' | BookingStatus; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'queued', label: 'In queue' },
+  { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
   { value: 'expired', label: 'Expired' },
 ];
 
-export function RowActions({ b, onDecide }: { b: AdminBookingListItem; onDecide: (m: DecisionMode) => void }) {
+export function RowActions({ b, onCancel }: { b: AdminBookingListItem; onCancel: () => void }) {
   const navigate = useNavigate();
   return (
     <DropdownMenu>
@@ -46,26 +46,18 @@ export function RowActions({ b, onDecide }: { b: AdminBookingListItem; onDecide:
         <DropdownMenuItem onSelect={() => navigate(`/admin/bookings/${b.id}`)}>
           <Eye /> View
         </DropdownMenuItem>
-        {b.permissions.canReject && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={!b.permissions.canApprove} onSelect={() => onDecide('approve')}>
-              <Check /> Approve
-            </DropdownMenuItem>
-            <DropdownMenuItem destructive onSelect={() => onDecide('reject')}>
-              <X /> Reject
-            </DropdownMenuItem>
-          </>
-        )}
-        {b.permissions.canCancel && (
-          <DropdownMenuItem destructive onSelect={() => onDecide('cancel')}>
-            <Ban /> Cancel
-          </DropdownMenuItem>
-        )}
         {b.permissions.canDownloadConfirmation && (
           <DropdownMenuItem onSelect={() => void downloadFile(`/admin/bookings/${b.id}/confirmation.pdf`, `booking-confirmation-${b.reference}.pdf`)}>
             <FileDown /> Download PDF
           </DropdownMenuItem>
+        )}
+        {b.permissions.canCancel && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem destructive onSelect={onCancel}>
+              <Ban /> {b.status === 'queued' ? 'Cancel request' : 'Cancel booking'}
+            </DropdownMenuItem>
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -77,13 +69,13 @@ export function BookingsTable({
   rows,
   sort,
   onSort,
-  onDecide,
+  onCancel,
   hideVenue = false,
 }: {
   rows: AdminBookingListItem[];
   sort: string;
   onSort: (s: string) => void;
-  onDecide: (b: AdminBookingListItem, m: DecisionMode) => void;
+  onCancel: (b: AdminBookingListItem) => void;
   hideVenue?: boolean;
 }) {
   const navigate = useNavigate();
@@ -105,15 +97,20 @@ export function BookingsTable({
                   {hideVenue ? b.requester.fullName : b.venue.name}
                 </Link>
                 <div className="relative z-10">
-                  <RowActions b={b} onDecide={(m) => onDecide(b, m)} />
+                  <RowActions b={b} onCancel={() => onCancel(b)} />
                 </div>
               </div>
               <p className="tabular text-[12.5px] text-muted">
                 <span className="whitespace-nowrap">{formatTimeRange(b.startTime, b.endTime)}</span> · <span className="whitespace-nowrap font-mono">{b.reference}</span>
               </p>
-              {!hideVenue && <p className="truncate text-[12.5px] text-muted">{b.requester.fullName}</p>}
+              {!hideVenue && (
+                <p className="truncate text-[12.5px] text-muted">
+                  {b.requester.fullName}
+                  {b.idNumber && <span className="font-mono"> · {b.idNumber}</span>}
+                </p>
+              )}
               <div className="mt-2">
-                <StatusBadge status={b.status} size="sm" />
+                <StatusBadge status={b.status} queuePosition={b.queuePosition} size="sm" />
               </div>
             </div>
           </div>
@@ -161,7 +158,14 @@ export function BookingsTable({
               </TD>
               <TD className="max-w-[180px]">
                 <span className="block truncate font-medium text-ink" title={b.requester.fullName}>{b.requester.fullName}</span>
-                <RoleBadge role={b.requester.role} className="mt-0.5" />
+                <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                  <RoleBadge role={b.requester.role} />
+                  {b.idNumber && (
+                    <span className="truncate font-mono text-[11.5px] text-muted" title={`USN / Faculty ID ${b.idNumber}`}>
+                      {b.idNumber}
+                    </span>
+                  )}
+                </span>
               </TD>
               <TD className="max-w-[180px]">
                 <Tooltip content={b.purpose}>
@@ -169,7 +173,7 @@ export function BookingsTable({
                 </Tooltip>
               </TD>
               <TD>
-                <StatusBadge status={b.status} size="sm" />
+                <StatusBadge status={b.status} queuePosition={b.queuePosition} size="sm" />
               </TD>
               <TD className="whitespace-nowrap text-[13px] text-muted">
                 <Tooltip content={formatTimestamp(b.createdAt, tz)}>
@@ -177,7 +181,7 @@ export function BookingsTable({
                 </Tooltip>
               </TD>
               <TD>
-                <RowActions b={b} onDecide={(m) => onDecide(b, m)} />
+                <RowActions b={b} onCancel={() => onCancel(b)} />
               </TD>
             </TR>
           ))}
@@ -195,7 +199,7 @@ export default function BookingsPage() {
   const venues = useAllVenueOptions();
   const [q, setQ] = React.useState(params.get('q') ?? '');
   const dq = useDebouncedValue(q.trim(), 300);
-  const [decision, setDecision] = React.useState<{ b: AdminBookingListItem; mode: DecisionMode } | null>(null);
+  const [cancelling, setCancelling] = React.useState<AdminBookingListItem | null>(null);
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
 
@@ -248,7 +252,7 @@ export default function BookingsPage() {
     <div className="grid gap-3 md:grid-cols-[minmax(0,1.6fr)_repeat(2,minmax(0,1fr))]">
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-[18px] -translate-y-1/2 text-muted" aria-hidden />
-        <Input type="search" aria-label="Search bookings" placeholder="Reference, purpose, requester name or email" value={q} onChange={(e) => setQ(e.target.value)} className="pl-10" />
+        <Input type="search" aria-label="Search bookings" placeholder="Reference, USN / faculty ID, purpose, name or email" value={q} onChange={(e) => setQ(e.target.value)} className="pl-10" />
       </div>
       <Select
         aria-label="Venue"
@@ -346,7 +350,7 @@ export default function BookingsPage() {
         </div>
       ) : (
         <div className={cn(list.isPlaceholderData && 'opacity-60 transition-opacity duration-150')}>
-          <BookingsTable rows={list.data!.data} sort={sort} onSort={(s) => set({ sort: s })} onDecide={(b, mode) => setDecision({ b, mode })} />
+          <BookingsTable rows={list.data!.data} sort={sort} onSort={(s) => set({ sort: s })} onCancel={setCancelling} />
           <Pagination
             page={page}
             pageSize={pageSize}
@@ -357,7 +361,7 @@ export default function BookingsPage() {
           />
         </div>
       )}
-      <DecisionDialog booking={decision?.b ?? null} mode={decision?.mode ?? null} onClose={() => setDecision(null)} />
+      <CancelBookingDialog booking={cancelling} onClose={() => setCancelling(null)} onDone={() => setCancelling(null)} />
     </div>
   );
 }

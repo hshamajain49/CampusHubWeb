@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Link, useParams } from 'react-router';
-import { Ban, Building2, CalendarDays, Check, Clock, Download, NotebookPen, UsersRound, X } from 'lucide-react';
+import { Ban, Building2, CalendarDays, Clock, Download, IdCard, ListOrdered, NotebookPen, UsersRound } from 'lucide-react';
 import { ROLE_LABELS, STATUS_LABELS, type Booking } from '@campushub/shared';
 import { isApiError } from '@/lib/api-client';
 import { downloadFile } from '@/lib/download';
@@ -10,7 +10,6 @@ import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
 import { useMe } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/controls';
-import { Tooltip } from '@/components/ui/menus';
 import { InfoRow, PageHeader, SectionCard } from '@/components/common/layout-bits';
 import { EmptyState, ErrorState } from '@/components/common/states';
 import { Pill, RoleBadge, StatusBadge } from '@/components/common/badges';
@@ -20,7 +19,7 @@ import { VenueBanner } from '@/components/common/venue-visuals';
 import { StatusCallout } from '@/features/bookings/booking-detail-page';
 import { useAdminBreadcrumb } from '@/layouts/admin-layout';
 import { useAdminBooking } from '../api';
-import { DecisionDialog, StartsInChip, type DecisionMode } from './decision-dialogs';
+import { CancelBookingDialog, StartsInChip } from './cancel-booking-dialog';
 
 export default function AdminBookingDetailPage() {
   const { bookingId } = useParams();
@@ -28,7 +27,7 @@ export default function AdminBookingDetailPage() {
   const now = useCampusNow();
   const { data: settings } = usePublicSettings();
   const q = useAdminBooking(bookingId);
-  const [mode, setMode] = React.useState<DecisionMode | null>(null);
+  const [cancelling, setCancelling] = React.useState(false);
   const [downloading, setDownloading] = React.useState(false);
   useDocumentTitle(q.data ? `Booking ${q.data.reference}` : 'Booking');
   useAdminBreadcrumb(q.data ? [{ label: 'All bookings', to: '/admin/bookings' }, { label: q.data.reference }] : null);
@@ -46,28 +45,20 @@ export default function AdminBookingDetailPage() {
   const b = q.data!;
   const tz = settings?.campusTimezone ?? 'UTC';
   const p = b.permissions;
-  const approveReason = !p.canApprove && b.status === 'pending' ? (!b.venue.isActive ? 'Venue inactive' : !b.requester.isActive ? 'Requester deactivated' : 'Start time has passed') : null;
   // The member-facing callout expects the member DTO shape; the fields it reads are shared.
   const asBooking = { ...b, cancelledBy: b.cancelledBy } as unknown as Booking;
 
   const panel = (
     <div className="grid gap-2">
-      {b.status === 'pending' && (
-        <>
-          <Tooltip content={approveReason}>
-            <span>
-              <Button size="lg" className="w-full" disabled={!p.canApprove} onClick={() => setMode('approve')}>
-                <Check /> Approve
-              </Button>
-            </span>
-          </Tooltip>
-          {approveReason && <p className="text-center text-[12px] text-muted">{approveReason}</p>}
-          <Button size="lg" variant="destructive-outline" onClick={() => setMode('reject')}>
-            <X /> Reject
-          </Button>
-        </>
+      {b.status === 'queued' && (
+        <p className="flex gap-2 rounded-[10px] bg-[#FDF4DC] px-3.5 py-3 text-[13px] text-[#7A5A00]">
+          <ListOrdered className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            #{b.queuePosition ?? '?'} in the queue. It's confirmed automatically if the time frees up; nothing to approve.
+          </span>
+        </p>
       )}
-      {b.status === 'approved' && (
+      {p.canDownloadConfirmation && (
         <>
           <Button
             size="lg"
@@ -80,14 +71,14 @@ export default function AdminBookingDetailPage() {
           >
             <Download /> Download confirmation
           </Button>
-          {p.canCancel && (
-            <Button size="lg" variant="destructive-outline" onClick={() => setMode('cancel')}>
-              <Ban /> Cancel booking
-            </Button>
-          )}
         </>
       )}
-      {(b.status === 'rejected' || b.status === 'cancelled' || b.status === 'expired') && (
+      {p.canCancel && (
+        <Button size="lg" variant="destructive-outline" onClick={() => setCancelling(true)}>
+          <Ban /> {b.status === 'queued' ? 'Cancel request' : 'Cancel booking'}
+        </Button>
+      )}
+      {(b.status === 'completed' || b.status === 'cancelled' || b.status === 'expired') && (
         <p className="rounded-[10px] bg-surface-muted px-3.5 py-3 text-[13px] text-muted">
           This booking is {STATUS_LABELS[b.status].toLowerCase()}. No further actions are possible.
         </p>
@@ -110,8 +101,8 @@ export default function AdminBookingDetailPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                {b.status === 'pending' && <StartsInChip date={b.date} today={now?.date} />}
-                <StatusBadge status={b.status} />
+                {(b.status === 'confirmed' || b.status === 'queued') && <StartsInChip date={b.date} today={now?.date} />}
+                <StatusBadge status={b.status} queuePosition={b.queuePosition} />
               </div>
             </div>
             <div className="px-5 pb-5">
@@ -156,6 +147,9 @@ export default function AdminBookingDetailPage() {
                 {formatTimeRange(b.startTime, b.endTime)} · {formatDuration(b.durationMinutes)}
               </span>
             </InfoRow>
+            <InfoRow icon={IdCard} label="USN / Faculty ID">
+              <span className="font-mono">{b.idNumber ?? 'Not recorded'}</span>
+            </InfoRow>
             <InfoRow icon={UsersRound} label="Expected attendees">
               <span className="tabular">{b.expectedAttendees ? `${formatNumber(b.expectedAttendees)} of ${formatNumber(b.venue.capacity)} capacity` : `Not specified (capacity ${formatNumber(b.venue.capacity)})`}</span>
             </InfoRow>
@@ -173,7 +167,7 @@ export default function AdminBookingDetailPage() {
 
         <aside className="hidden lg:col-span-4 lg:block">
           <div className="card sticky top-[88px] p-5">
-            <p className="eyebrow mb-3">Decision</p>
+            <p className="eyebrow mb-3">Actions</p>
             {panel}
           </div>
         </aside>
@@ -181,7 +175,7 @@ export default function AdminBookingDetailPage() {
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 pt-3 backdrop-blur-[6px] safe-bottom lg:hidden">
         <div className="mx-auto max-w-[1400px] [&>.grid]:grid-cols-2 [&>.grid>p]:col-span-2">{panel}</div>
       </div>
-      <DecisionDialog booking={mode ? b : null} mode={mode} onClose={() => setMode(null)} />
+      <CancelBookingDialog booking={cancelling ? b : null} onClose={() => setCancelling(false)} onDone={() => setCancelling(false)} />
     </div>
   );
 }

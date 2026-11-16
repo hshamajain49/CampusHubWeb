@@ -6,7 +6,6 @@ import {
   CalendarDays,
   CalendarRange,
   ChartColumn,
-  ClipboardCheck,
   Megaphone,
   Tags,
   LayoutDashboard,
@@ -64,7 +63,6 @@ const GROUPS = [
   {
     label: 'Bookings',
     items: [
-      { to: '/admin/approvals', label: 'Approvals', icon: ClipboardCheck, badge: 'approvals' },
       { to: '/admin/bookings', label: 'All bookings', icon: CalendarDays },
       { to: '/admin/calendar', label: 'Calendar', icon: CalendarRange },
     ],
@@ -95,7 +93,6 @@ const GROUPS = [
 
 const SECTION_LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
-  approvals: 'Approvals',
   bookings: 'All bookings',
   calendar: 'Calendar',
   complaints: 'All complaints',
@@ -108,7 +105,7 @@ const SECTION_LABELS: Record<string, string> = {
   notifications: 'Notifications',
 };
 
-type Badges = { approvals: number; complaints: number };
+type Badges = { complaints: number };
 
 function SidebarNav({ collapsed, badges, onNavigate }: { collapsed: boolean; badges: Badges; onNavigate?: () => void }) {
   const { pathname } = useLocation();
@@ -168,10 +165,9 @@ export function AdminLayout() {
   usePrefetchPages(ADMIN_PREFETCH);
   const [crumbs, setCrumbs] = React.useState<Crumb[] | null>(null);
   const dash = useAdminDashboard();
-  const pending = dash.data?.kpis.pendingCount ?? 0;
-  // All complaints: open complaints needing reassignment + new today (§8.2).
+  // All complaints: open complaints needing reassignment + new today (§8.2). Bookings need no admin action.
   const ck = dash.data?.complaintKpis;
-  const badges: Badges = { approvals: pending, complaints: ck ? ck.needsReassignment + ck.newToday : 0 };
+  const badges: Badges = { complaints: ck ? ck.needsReassignment + ck.newToday : 0 };
 
   const section = pathname.split('/')[2] ?? 'dashboard';
   const trail = crumbs ?? [{ label: pathname.startsWith('/admin/settings/audit-log') ? 'Audit log' : (SECTION_LABELS[section] ?? 'Admin') }];

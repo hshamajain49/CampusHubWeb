@@ -52,7 +52,7 @@ function WeekIllustration() {
       </div>
       <div className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[11.5px] text-white/65">
         <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded-full" style={SLOT_STYLE.booked} />Booked</span>
-        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded-full" style={SLOT_STYLE.hold} />On hold</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded-full" style={SLOT_STYLE.hold} />Queued</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded-full" style={SLOT_STYLE.mine} />Yours</span>
       </div>
     </div>
@@ -61,7 +61,7 @@ function WeekIllustration() {
 
 const BENEFITS = [
   { icon: Search, text: 'Find a free venue in seconds' },
-  { icon: CalendarCheck2, text: 'Track every request in one place' },
+  { icon: CalendarCheck2, text: 'Book instantly, or queue for a taken slot' },
   { icon: Megaphone, text: 'Report campus issues and follow the fix' },
 ];
 
@@ -86,7 +86,7 @@ export function AuthLayout() {
         <div className="relative my-10">
           <p className="font-display text-[30px] font-bold leading-9 tracking-[-0.5px]">Your campus, simplified.</p>
           <p className="mt-3 max-w-[420px] text-[15px] leading-6 text-white/75">
-            Book halls, labs and spaces, report what needs fixing, and see every decision as it happens.
+            Book halls, labs and spaces in seconds, queue fairly for busy ones, and report what needs fixing.
           </p>
           <ul className="mt-7 grid gap-3.5">
             {BENEFITS.map(({ icon: Icon, text }) => (

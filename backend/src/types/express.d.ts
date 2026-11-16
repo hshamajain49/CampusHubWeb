@@ -10,6 +10,8 @@ export interface ProfileRow {
   /** Joined by loadProfile (null unless department_staff). */
   service_department_name?: string | null;
   service_department_active?: boolean | null;
+  /** USN / faculty ID from the member's latest booking (joined by loadProfile). */
+  last_id_number?: string | null;
   is_active: boolean;
   must_change_password: boolean;
   email_notifications: boolean;

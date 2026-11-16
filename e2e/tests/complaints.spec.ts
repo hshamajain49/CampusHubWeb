@@ -226,10 +226,10 @@ test('CE2E-10: a department staff member can book a venue', async () => {
   const res = await fetch(`${API}/api/v1/bookings`, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ venueId: venues.at(-1)!.id, date: slot.date, startTime: slot.start, endTime: slot.end, purpose: 'Electrical safety briefing' }),
+    body: JSON.stringify({ venueId: venues.at(-1)!.id, date: slot.date, startTime: slot.start, endTime: slot.end, purpose: 'Electrical safety briefing', idNumber: 'STF-0042' }),
   });
   const body = await res.json();
   expect(res.status, JSON.stringify(body)).toBe(201);
-  // Clean up, so reruns never reach the 5-pending-requests limit.
+  // Clean up, so reruns never reach the upcoming-bookings limit.
   await api(token, `/bookings/${body.data.id}/cancel`, { method: 'POST', body: JSON.stringify({ reason: 'E2E clean-up' }) });
 });

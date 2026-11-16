@@ -45,7 +45,7 @@ export default function VenueAvailabilityTab({ venueId, settings, initialDate }:
           end: i.end,
           title: i.label,
           display: 'background',
-          classNames: [i.kind === 'booked' ? 'ev-booked' : i.kind === 'on_hold' ? 'ev-hold' : 'ev-blocked'],
+          classNames: [i.kind === 'booked' ? 'ev-booked' : i.kind === 'queued' ? 'ev-hold' : 'ev-blocked'],
           extendedProps: { ariaLabel: `${i.label} ${range}` },
         };
       }),

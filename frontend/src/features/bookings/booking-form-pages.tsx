@@ -5,6 +5,7 @@ import type { VenueSummary } from '@campushub/shared';
 import { isApiError } from '@/lib/api-client';
 import { useDocumentTitle } from '@/hooks/misc';
 import { usePublicSettings } from '@/hooks/use-public-settings';
+import { useMe } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Alert, Skeleton } from '@/components/ui/controls';
 import { PageHeader } from '@/components/common/layout-bits';
@@ -23,13 +24,14 @@ function FormSkeleton() {
 }
 
 export function NewBookingPage() {
-  useDocumentTitle('New booking request');
+  const me = useMe();
+  useDocumentTitle('Book a venue');
   const [params] = useSearchParams();
   const venueId = params.get('venueId') ?? undefined;
   const venue = useVenue(venueId);
   const settings = usePublicSettings();
 
-  const header = <PageHeader title="New booking request" description="Choose a time that's free — pending requests and approved bookings both hold their slot." breadcrumb={[{ label: 'Venues', to: '/venues' }, { label: 'New booking' }]} />;
+  const header = <PageHeader title="Book a venue" description="A free time is confirmed instantly. A booked time puts you in the queue for it." breadcrumb={[{ label: 'Venues', to: '/venues' }, { label: 'New booking' }]} />;
 
   if (settings.isLoading || (venueId && venue.isLoading)) {
     return (
@@ -77,6 +79,7 @@ export function NewBookingPage() {
           endTime: params.get('end') ?? '',
           purpose: params.get('purpose') ?? '',
           expectedAttendees: null,
+          idNumber: me.lastIdNumber ?? '',
         }}
       />
     </div>
@@ -84,6 +87,7 @@ export function NewBookingPage() {
 }
 
 export function EditBookingPage() {
+  const me = useMe();
   const { bookingId } = useParams();
   const booking = useBooking(bookingId);
   useDocumentTitle('Edit booking');
@@ -125,13 +129,13 @@ export function EditBookingPage() {
         description={<span className="font-mono text-[13px]">{b!.reference}</span>}
         breadcrumb={[{ label: 'My bookings', to: '/bookings' }, { label: b!.reference, to: `/bookings/${b!.id}` }, { label: 'Edit' }]}
       />
-      {b!.status === 'approved' ? (
-        <Alert variant="warning" className="mb-5" title="This booking is approved">
-          Saving changes to this approved booking sends it back for approval. It keeps its time slot while it waits.
+      {b!.status === 'confirmed' ? (
+        <Alert variant="info" className="mb-5" title="Your booking is confirmed">
+          You can move it to another free time. If the new time is already booked, nothing changes and you keep this slot.
         </Alert>
       ) : (
-        <Alert variant="info" className="mb-5">
-          Changes keep your request in the review queue.
+        <Alert variant="warning" className="mb-5" title={`You're #${b!.queuePosition ?? '?'} in the queue`}>
+          Moving to a free time confirms it straight away. Moving to another booked time puts you at the back of that queue.
         </Alert>
       )}
       <BookingForm
@@ -147,6 +151,7 @@ export function EditBookingPage() {
           endTime: b!.endTime,
           purpose: b!.purpose,
           expectedAttendees: b!.expectedAttendees,
+          idNumber: b!.idNumber ?? me.lastIdNumber ?? '',
         }}
       />
     </div>

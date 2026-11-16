@@ -22,7 +22,10 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
 
 /** Profile + its service department (department_staff), as used by /me and the staff guard. */
 export const PROFILE_SELECT = `
-  select p.*, sd.name as service_department_name, sd.is_active as service_department_active
+  select p.*, sd.name as service_department_name, sd.is_active as service_department_active,
+         (select b.id_number from public.bookings b
+           where b.requester_id = p.id and b.id_number is not null
+           order by b.created_at desc limit 1) as last_id_number
     from public.profiles p
     left join public.service_departments sd on sd.id = p.service_department_id`;
 

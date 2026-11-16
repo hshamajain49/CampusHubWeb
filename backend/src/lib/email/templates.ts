@@ -72,13 +72,14 @@ export interface NotificationEmailInput {
 
 export function renderNotificationEmail(i: NotificationEmailInput): RenderedEmail {
   const subjects: Record<string, string> = {
-    booking_approved: `Approved: ${i.venue} on ${i.dayMonth}`,
-    booking_rejected: `Not approved: ${i.venue} on ${i.dayMonth}`,
+    booking_confirmed: `Confirmed: ${i.venue} on ${i.dayMonth}`,
+    booking_queued: `In queue: ${i.venue} on ${i.dayMonth}`,
+    booking_promoted: `Your slot is confirmed: ${i.venue} on ${i.dayMonth}`,
     booking_cancelled: `Cancelled: ${i.venue} on ${i.dayMonth}`,
-    booking_expired: `Expired request: ${i.venue} on ${i.dayMonth}`,
+    booking_expired: `Slot didn't free up: ${i.venue} on ${i.dayMonth}`,
     booking_reminder: `Reminder: ${i.venue} at ${i.time} ${i.relativeDay}`,
-    admin_new_request: `New request: ${i.venue} on ${i.dayMonth} (${i.requester})`,
-    admin_request_modified: `Re-approval needed: ${i.reference}`,
+    admin_new_booking: `New booking: ${i.venue} on ${i.dayMonth} (${i.requester})`,
+    admin_request_modified: `Booking changed: ${i.reference}`,
     admin_booking_cancelled: `Cancelled by requester: ${i.reference}`,
   };
   const { html, text } = layout({

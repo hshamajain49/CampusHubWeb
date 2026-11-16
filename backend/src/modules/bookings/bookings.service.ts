@@ -1,4 +1,8 @@
-// Member booking service: algorithms A (create), B (update), C (cancel) of §10.15, plus reads.
+// Member booking service (docs/BOOKINGS.md): create (confirm or queue), update, cancel (+ FIFO promotion), reads.
+//
+// Concurrency: every write that can take or free a slot locks the venue row first, so requests for one venue are
+// handled one at a time. The first valid request is confirmed; anything that then overlaps a confirmed booking is
+// queued. bookings_no_overlap (confirmed only) is the database's last line of defence.
 import {
   BLOCK_TYPE_LABELS,
   type Booking,
@@ -8,26 +12,31 @@ import {
   type MemberDashboard,
 } from '@campushub/shared';
 import { pool } from '../../db/pool.js';
-import { withTransaction } from '../../db/transaction.js';
+import { withTransaction, type Tx } from '../../db/transaction.js';
 import { listMeta, offsetOf, Where } from '../../db/sql.js';
 import { appError } from '../../errors/app-error.js';
 import type { Actor } from '../../middleware/authenticate.js';
 import { loadCampus } from '../../domain/settings.js';
-import {
-  assertSlot,
-  cancellationClosedMessage,
-  minutesUntil,
-  modificationClosedMessage,
-  startLdt,
-} from '../../domain/booking-rules.js';
+import { assertSlot, minutesUntil, modificationClosedMessage, startLdt } from '../../domain/booking-rules.js';
 import { publish } from '../notifications/notifier.js';
-import { findConflicts, loadBookingRow, loadHistory, type ConflictResult } from './booking.queries.js';
+import {
+  findConflicts,
+  loadBookingRow,
+  loadHistory,
+  promoteQueue,
+  QUEUE_POSITION_SQL,
+  UPCOMING_SQL,
+  type ConflictResult,
+} from './booking.queries.js';
+
+export { UPCOMING_SQL };
 import { toBooking, toBookingSummary } from './booking.mapper.js';
 import { memberComplaintSummary } from '../complaints/complaints.service.js';
 
 const CONFLICT_MESSAGE = 'This venue is already booked for the selected date/time. Please choose a different slot.';
 
-function throwConflicts(c: ConflictResult): void {
+/** Blocks and the member's own overlapping bookings stop a request; a confirmed booking only queues it. */
+function throwHardConflicts(c: ConflictResult): void {
   const block = c.blocks[0];
   if (block) {
     throw appError(
@@ -36,7 +45,23 @@ function throwConflicts(c: ConflictResult): void {
       { field: 'startTime', blockType: block.blockType, reason: block.reason, start: block.start, end: block.end },
     );
   }
-  if (c.bookings.length) throw appError('BOOKING_CONFLICT', CONFLICT_MESSAGE, { field: 'startTime', conflicts: c.bookings });
+  const own = c.own[0];
+  if (own) {
+    throw appError(
+      'DUPLICATE_BOOKING',
+      own.status === 'queued'
+        ? `You're already in the queue for this venue at this time (${own.reference}).`
+        : `You already have this venue booked at this time (${own.reference}).`,
+      { field: 'startTime', bookingId: own.id, reference: own.reference, status: own.status },
+    );
+  }
+}
+
+/** Promotes the venue's queue and notifies everyone who got a slot. */
+export async function promoteAndNotify(tx: Tx, venueId: string, actorId: string | null): Promise<string[]> {
+  const promoted = await promoteQueue(tx, venueId);
+  for (const bookingId of promoted) await publish(tx, { type: 'booking.promoted', bookingId, actorId });
+  return promoted;
 }
 
 export async function getMemberBooking(requesterId: string, id: string): Promise<Booking> {
@@ -75,6 +100,7 @@ export async function createBooking(
   let id: string;
   try {
     id = await withTransaction({ actorId: actor.id }, async (tx) => {
+      // Member first (the upcoming-bookings limit), then the venue: the same order as every other writer.
       await tx.query('select id from public.profiles where id = $1 for update', [actor.id]);
       const venue = (await tx.query('select * from public.venues where id = $1 for update', [body.venueId])).rows[0];
       if (!venue) throw appError('VENUE_NOT_FOUND', "This venue doesn't exist.", { field: 'venueId' });
@@ -91,28 +117,39 @@ export async function createBooking(
         });
       }
 
-      const pending = (
-        await tx.query<{ n: number }>("select count(*) as n from public.bookings where requester_id = $1 and status = 'pending'", [
+      const now = localNow.replace('T', ' ');
+      const active = (
+        await tx.query<{ n: number }>(`select count(*) as n from public.bookings b where b.requester_id = $1 and ${UPCOMING_SQL('$2::timestamp')}`, [
           actor.id,
+          now,
         ])
       ).rows[0]!.n;
-      if (pending >= settings.maxPendingPerUser) {
+      if (active >= settings.maxActivePerUser) {
         throw appError(
-          'PENDING_LIMIT_REACHED',
-          `You already have ${pending} pending requests, the maximum allowed. Wait for a decision or cancel one before making another.`,
-          { limit: settings.maxPendingPerUser, current: pending },
+          'BOOKING_LIMIT_REACHED',
+          `You already have ${active} upcoming bookings, the maximum allowed. Cancel one before booking again.`,
+          { limit: settings.maxActivePerUser, current: active },
         );
       }
 
-      throwConflicts(await findConflicts(tx, body.venueId, body.date, body.startTime, body.endTime, actor.id));
+      const c = await findConflicts(tx, body.venueId, body.date, body.startTime, body.endTime, actor.id);
+      throwHardConflicts(c);
+      const status = c.bookings.length ? 'queued' : 'confirmed';
 
       const ins = await tx.query<{ id: string }>(
-        `insert into public.bookings (venue_id, requester_id, booking_date, start_time, end_time, purpose, expected_attendees, idempotency_key)
-         values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
-        [body.venueId, actor.id, body.date, body.startTime, body.endTime, body.purpose, attendees, idempotencyKey],
+        `insert into public.bookings (venue_id, requester_id, booking_date, start_time, end_time, purpose, expected_attendees,
+                                      id_number, status, idempotency_key)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
+        [body.venueId, actor.id, body.date, body.startTime, body.endTime, body.purpose, attendees, body.idNumber, status, idempotencyKey],
       );
       const newId = ins.rows[0]!.id;
-      await publish(tx, { type: 'booking.submitted', bookingId: newId, actorId: actor.id });
+      // Everyone already queued for this time arrived earlier, so the new request goes behind all of them.
+      await publish(tx, {
+        type: status === 'confirmed' ? 'booking.confirmed' : 'booking.queued',
+        bookingId: newId,
+        actorId: actor.id,
+        data: { queuePosition: status === 'queued' ? c.queueLength + 1 : null },
+      });
       return newId;
     });
   } catch (err: any) {
@@ -130,6 +167,11 @@ export async function createBooking(
 }
 
 // ─────────────────────────── B. Update (E14) ───────────────────────────
+/**
+ * Details (purpose, attendees, ID) change in place. A new time is checked like a new request, except that a confirmed
+ * booking never gives up its slot for a taken one (the change is refused). A queued request moved to a free time is
+ * confirmed; moved to another taken time it re-joins the back of that queue. Any freed time is offered to the queue.
+ */
 export async function updateBooking(actor: Actor, id: string, body: BookingUpdateBody): Promise<Booking> {
   const first = await pool.query<{ venue_id: string }>('select venue_id from public.bookings where id = $1 and requester_id = $2', [
     id,
@@ -153,7 +195,7 @@ export async function updateBooking(actor: Actor, id: string, body: BookingUpdat
         currentVersion: cur.version,
       });
     }
-    if (cur.status !== 'pending' && cur.status !== 'approved') {
+    if (cur.status !== 'confirmed' && cur.status !== 'queued') {
       throw appError('INVALID_STATUS_TRANSITION', `This booking is ${cur.status} and can no longer be modified.`);
     }
     const { settings, localNow } = await loadCampus(tx);
@@ -170,15 +212,33 @@ export async function updateBooking(actor: Actor, id: string, body: BookingUpdat
       endTime: body.endTime ?? cur.et,
       purpose: body.purpose ?? cur.purpose,
       expectedAttendees: body.expectedAttendees !== undefined ? body.expectedAttendees : cur.expected_attendees,
+      idNumber: body.idNumber ?? cur.id_number,
     };
     const slotChanged = next.date !== cur.date || next.startTime !== cur.st || next.endTime !== cur.et;
     const changed =
-      slotChanged || next.purpose !== cur.purpose || (next.expectedAttendees ?? null) !== (cur.expected_attendees ?? null);
+      slotChanged ||
+      next.purpose !== cur.purpose ||
+      (next.expectedAttendees ?? null) !== (cur.expected_attendees ?? null) ||
+      (next.idNumber ?? null) !== (cur.id_number ?? null);
     if (!changed) return;
 
+    let status: 'confirmed' | 'queued' = cur.status;
+    let requeue = false;
     if (slotChanged) {
       assertSlot(next, settings, localNow);
-      throwConflicts(await findConflicts(tx, venueId, next.date, next.startTime, next.endTime, actor.id, id));
+      const c = await findConflicts(tx, venueId, next.date, next.startTime, next.endTime, actor.id, id);
+      throwHardConflicts(c);
+      if (cur.status === 'confirmed' && c.bookings.length) {
+        throw appError(
+          'BOOKING_CONFLICT',
+          "That time is already booked, so your booking hasn't changed. To queue for it, cancel this booking and book the new time.",
+          { field: 'startTime', conflicts: c.bookings },
+        );
+      }
+      if (cur.status === 'queued') {
+        status = c.bookings.length ? 'queued' : 'confirmed';
+        requeue = status === 'queued';
+      }
     }
     if (
       next.expectedAttendees !== null &&
@@ -193,46 +253,50 @@ export async function updateBooking(actor: Actor, id: string, body: BookingUpdat
 
     await tx.query(
       `update public.bookings
-          set booking_date = $2, start_time = $3, end_time = $4, purpose = $5, expected_attendees = $6,
-              status = case when status = 'approved' then 'pending' else status end
+          set booking_date = $2, start_time = $3, end_time = $4, purpose = $5, expected_attendees = $6, id_number = $7,
+              status = $8, queued_at = case when $9::boolean then clock_timestamp() else queued_at end
         where id = $1`,
-      [id, next.date, next.startTime, next.endTime, next.purpose, next.expectedAttendees],
+      [id, next.date, next.startTime, next.endTime, next.purpose, next.expectedAttendees, next.idNumber, status, requeue],
     );
-    await publish(tx, {
-      type: 'booking.modified',
-      bookingId: id,
-      actorId: actor.id,
-      data: { returnedToPending: cur.status === 'approved', previousStatus: cur.status },
-    });
+    await publish(tx, { type: 'booking.modified', bookingId: id, actorId: actor.id, data: { previousStatus: cur.status } });
+    if (slotChanged) await promoteAndNotify(tx, venueId, actor.id);
   });
   return getMemberBooking(actor.id, id);
 }
 
 // ─────────────────────────── C. Cancel (E15) ───────────────────────────
+/** Members can cancel at any time until the booking ends; a freed slot goes to the queue straight away. */
 export async function cancelBooking(actor: Actor, id: string, body: { reason?: string; version?: number }): Promise<Booking> {
+  const first = await pool.query<{ venue_id: string }>('select venue_id from public.bookings where id = $1 and requester_id = $2', [
+    id,
+    actor.id,
+  ]);
+  if (!first.rows[0]) throw appError('BOOKING_NOT_FOUND');
+  const venueId = first.rows[0].venue_id;
+
   await withTransaction({ actorId: actor.id, note: body.reason || null }, async (tx) => {
+    await tx.query('select id from public.venues where id = $1 for update', [venueId]);
     const cur = (
       await tx.query(
-        `select b.*, b.booking_date as date, to_char(b.start_time, 'HH24:MI') as st
+        `select b.*, b.booking_date as date, to_char(b.start_time, 'HH24:MI') as st, to_char(b.end_time, 'HH24:MI') as et
            from public.bookings b where b.id = $1 and b.requester_id = $2 for update`,
         [id, actor.id],
       )
     ).rows[0];
     if (!cur) throw appError('BOOKING_NOT_FOUND');
     if (cur.status === 'cancelled') return; // idempotent
-    if (cur.status !== 'pending' && cur.status !== 'approved') {
+    if (cur.status !== 'confirmed' && cur.status !== 'queued') {
       throw appError('INVALID_STATUS_TRANSITION', `This booking is ${cur.status} and can no longer be modified.`);
     }
     if (body.version !== undefined && body.version !== cur.version) {
       throw appError('BOOKING_CHANGED', undefined, { currentVersion: cur.version });
     }
-    const { settings, localNow } = await loadCampus(tx);
-    const until = minutesUntil(startLdt(cur.date, cur.st), localNow);
-    if (cur.status === 'pending' && until <= 0) {
-      throw appError('CANCELLATION_WINDOW_CLOSED', 'This booking has already started.');
+    const { localNow } = await loadCampus(tx);
+    if (cur.status === 'queued' && minutesUntil(startLdt(cur.date, cur.st), localNow) <= 0) {
+      throw appError('CANCELLATION_WINDOW_CLOSED', 'This queued request expired when the booking time started.');
     }
-    if (cur.status === 'approved' && until <= settings.cancellationCutoffMinutes) {
-      throw appError('CANCELLATION_WINDOW_CLOSED', cancellationClosedMessage(settings.cancellationCutoffMinutes));
+    if (cur.status === 'confirmed' && minutesUntil(startLdt(cur.date, cur.et), localNow) <= 0) {
+      throw appError('CANCELLATION_WINDOW_CLOSED', 'This booking has already ended.');
     }
     await tx.query(
       `update public.bookings set status = 'cancelled', cancelled_by = $2, cancelled_at = now(), cancellation_reason = $3 where id = $1`,
@@ -244,6 +308,7 @@ export async function cancelBooking(actor: Actor, id: string, body: { reason?: s
       actorId: actor.id,
       data: { cancelledBy: 'requester', previousStatus: cur.status },
     });
+    if (cur.status === 'confirmed') await promoteAndNotify(tx, venueId, actor.id);
   });
   return getMemberBooking(actor.id, id);
 }
@@ -256,10 +321,11 @@ export async function listMyBookings(
   const campus = await loadCampus(pool);
   const w = new Where();
   w.add('b.requester_id = $?', requesterId);
-  const now = campus.localNow.replace('T', ' ');
-  if (q.scope === 'upcoming') w.add(`b.status in ('pending','approved') and (b.booking_date + b.end_time) > $?::timestamp`, now);
-  if (q.scope === 'history')
-    w.add(`(b.status in ('rejected','cancelled','expired') or (b.booking_date + b.end_time) <= $?::timestamp)`, now);
+  if (q.scope !== 'all') {
+    // Registered only when used: an unused parameter makes Postgres reject the statement.
+    const now = w.param(campus.localNow.replace('T', ' '));
+    w.add(q.scope === 'upcoming' ? UPCOMING_SQL(`${now}::timestamp`) : `not ${UPCOMING_SQL(`${now}::timestamp`)}`);
+  }
   if (q.status?.length) w.add('b.status = any($?::text[])', q.status);
   if (q.from) w.add('b.booking_date >= $?::date', q.from);
   if (q.to) w.add('b.booking_date <= $?::date', q.to);
@@ -282,7 +348,7 @@ export async function listMyBookings(
 
 /** The joined select exposed with booking-table column names so the same WHERE works on it. */
 export const BOOKING_SELECT_INNER = `
-  select b.*, b.booking_date as date,
+  select b.*, b.booking_date as date, ${QUEUE_POSITION_SQL} as queue_position,
          v.name as venue_name, v.building as venue_building, v.venue_type, v.location_details as venue_location,
          v.capacity as venue_capacity, v.is_active as venue_active,
          p.full_name as requester_name, p.email as requester_email, p.role as requester_role,
@@ -296,16 +362,16 @@ export async function memberDashboard(requesterId: string): Promise<MemberDashbo
   const now = campus.localNow.replace('T', ' ');
   const counts = (
     await pool.query(
-      `select count(*) filter (where status = 'pending' and (booking_date + start_time) > $2::timestamp) as pending,
-              count(*) filter (where status = 'approved' and (booking_date + end_time) > $2::timestamp) as upcoming_approved,
-              count(*) filter (where status in ('rejected','cancelled','expired') or (booking_date + end_time) <= $2::timestamp) as history
-         from public.bookings where requester_id = $1`,
+      `select count(*) filter (where b.status = 'queued' and (b.booking_date + b.start_time) > $2::timestamp) as queued,
+              count(*) filter (where b.status = 'confirmed' and (b.booking_date + b.end_time) > $2::timestamp) as upcoming_confirmed,
+              count(*) filter (where not ${UPCOMING_SQL('$2::timestamp')}) as history
+         from public.bookings b where b.requester_id = $1`,
       [requesterId, now],
     )
   ).rows[0];
   const next = await pool.query(
     `select * from (${BOOKING_SELECT_INNER}) b
-      where b.requester_id = $1 and b.status in ('pending','approved') and (b.booking_date + b.end_time) > $2::timestamp
+      where b.requester_id = $1 and ${UPCOMING_SQL('$2::timestamp')}
       order by b.booking_date, b.start_time limit 1`,
     [requesterId, now],
   );
@@ -315,7 +381,7 @@ export async function memberDashboard(requesterId: string): Promise<MemberDashbo
   ]);
   const map = (r: any) => toBookingSummary(normalize(r), campus.settings, campus.localNow);
   return {
-    counts: { pending: counts.pending, upcomingApproved: counts.upcoming_approved, history: counts.history },
+    counts: { queued: counts.queued, upcomingConfirmed: counts.upcoming_confirmed, history: counts.history },
     nextBooking: next.rows[0] ? map(next.rows[0]) : null,
     recentBookings: recent.rows.map(map),
     ...complaints,

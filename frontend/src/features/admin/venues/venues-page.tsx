@@ -176,7 +176,7 @@ export default function VenuesPage() {
                   <TD className="text-muted">{VENUE_TYPE_LABELS[v.venueType]}</TD>
                   <TD className="tabular">{formatNumber(v.capacity)} seats</TD>
                   <TD className="tabular whitespace-nowrap text-[13px] text-muted">
-                    {v.stats.upcomingApprovedCount} approved · {v.stats.pendingCount} pending
+                    {v.stats.upcomingConfirmedCount} confirmed · {v.stats.queuedCount} queued
                   </TD>
                   <TD>{v.isActive ? <Pill tone="success">Active</Pill> : <Pill>Inactive</Pill>}</TD>
                   <TD>

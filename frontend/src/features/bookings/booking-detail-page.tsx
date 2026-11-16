@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Link, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { MoreHorizontal, Ban, Building2, CalendarDays, CalendarX2, Clock, Download, Hash, NotebookPen, Pencil, Repeat, UserRound, UsersRound } from 'lucide-react';
+import { MoreHorizontal, Ban, Building2, CalendarDays, CalendarX2, CheckCheck, Clock, Download, Hash, IdCard, ListOrdered, NotebookPen, Pencil, Repeat, UserRound, UsersRound } from 'lucide-react';
 import type { Booking } from '@campushub/shared';
 import { STATUS_LABELS } from '@campushub/shared';
 import { isApiError, ApiError } from '@/lib/api-client';
@@ -24,33 +24,47 @@ import { Field } from '@/components/common/form-field';
 import { TimingChip } from '@/components/common/booking-visuals';
 import { useBooking, useCancelBooking } from './api';
 
+/** Shared with the admin booking page, so the wording follows whose booking it is. */
 export function StatusCallout({ b, meId, tz }: { b: Booking; meId: string; tz: string }) {
+  const mine = b.requester.id === meId;
   switch (b.status) {
-    case 'pending':
-      return <Alert variant="warning">Awaiting review by the administrator. We'll notify you when it's decided.</Alert>;
-    case 'approved':
+    case 'confirmed':
       return (
-        <Alert variant="success" title="Your booking is confirmed.">
-          {b.approvalNote && <p className="mt-0.5 whitespace-pre-line">Note from the administrator: {b.approvalNote}</p>}
+        <Alert variant="success" title={mine ? 'Your booking is confirmed.' : 'Confirmed.'}>
+          {b.queuedAt
+            ? `The slot freed up and ${mine ? 'you were' : 'this request was'} next in the queue${b.confirmedAt ? `, so it was confirmed on ${formatTimestamp(b.confirmedAt, tz)}` : ''}.`
+            : 'Booked instantly: no approval needed. Cancel any time if your plans change, so the next person in the queue gets it.'}
         </Alert>
       );
-    case 'rejected':
+    case 'queued':
       return (
-        <Alert variant="error" title="Reason for rejection">
-          <p className="whitespace-pre-line">{b.rejectionReason}</p>
+        <Alert variant="warning" icon={<ListOrdered />} title={`${mine ? "You're" : 'This request is'} #${b.queuePosition ?? '?'} in the queue.`}>
+          Someone else booked this time first. If they cancel, the slot goes to the queue in order and {mine ? "it's yours automatically; we'll notify you" : 'the requester is notified'}. A request still waiting when the booking starts expires.
+        </Alert>
+      );
+    case 'completed':
+      return (
+        <Alert variant="info" icon={<CheckCheck />} title="This booking has ended.">
+          It took place as booked.
         </Alert>
       );
     case 'cancelled': {
-      const byMe = b.cancelledBy?.id === meId;
+      const by = b.cancelledBy ? (b.cancelledBy.id === meId ? 'you' : b.cancelledBy.role === 'super_admin' ? 'the administrator' : b.cancelledBy.fullName) : 'the system';
       const when = b.cancelledAt ? formatDate(campusDateOf(b.cancelledAt, tz)) : '';
       return (
-        <Alert variant="info" icon={<Ban />} title={`Cancelled by ${byMe ? 'you' : 'the administrator'}${when ? ` on ${when}` : ''}`}>
+        <Alert variant="info" icon={<Ban />} title={`Cancelled by ${by}${when ? ` on ${when}` : ''}`}>
           {b.cancellationReason && <p className="whitespace-pre-line">Reason: {b.cancellationReason}</p>}
         </Alert>
       );
     }
     case 'expired':
-      return <Alert variant="warning">This request expired because it wasn't reviewed before its start time.</Alert>;
+      return (
+        <Alert variant="warning">
+          {b.queuedAt
+            ? "The slot stayed booked until the start time, so this queued request expired."
+            : "This request expired because it wasn't reviewed before its start time."}
+        </Alert>
+      );
   }
 }
 
@@ -62,13 +76,17 @@ function CancelDialog({ b, open, onOpenChange }: { b: Booking; open: boolean; on
       open={open}
       onOpenChange={onOpenChange}
       destructive
-      title="Cancel this booking?"
-      description="This cannot be undone. The venue will become available for others."
-      cancelLabel="Keep booking"
-      confirmLabel="Cancel booking"
+      title={b.status === 'queued' ? 'Leave the queue?' : 'Cancel this booking?'}
+      description={
+        b.status === 'queued'
+          ? "This cannot be undone. You'll lose your place in the queue."
+          : 'This cannot be undone. If anyone is queued for this time, the first in line gets the slot automatically.'
+      }
+      cancelLabel={b.status === 'queued' ? 'Stay in the queue' : 'Keep booking'}
+      confirmLabel={b.status === 'queued' ? 'Leave the queue' : 'Cancel booking'}
       onConfirm={async () => {
         await cancel.mutateAsync({ reason: reason.trim() || undefined, version: b.version });
-        toast.success('Booking cancelled.');
+        toast.success(b.status === 'queued' ? 'You left the queue.' : 'Booking cancelled.');
       }}
     >
       <Field label="Reason" optional hint={`${reason.length}/500`}>
@@ -138,7 +156,14 @@ export function BookingDetailPage() {
   const items: Action[] = [];
   if (p.canDownloadConfirmation) items.push({ key: 'pdf', label: 'Download confirmation', icon: <Download />, variant: 'default', onClick: download, loading: downloading });
   if (p.canEdit) items.push({ key: 'edit', label: 'Edit booking', icon: <Pencil />, variant: 'outline', to: `/bookings/${b.id}/edit` });
-  if (p.canCancel) items.push({ key: 'cancel', label: 'Cancel booking', icon: <CalendarX2 />, variant: 'destructive-outline', onClick: () => setCancelOpen(true) });
+  if (p.canCancel)
+    items.push({
+      key: 'cancel',
+      label: b.status === 'queued' ? 'Leave the queue' : 'Cancel booking',
+      icon: <CalendarX2 />,
+      variant: 'destructive-outline',
+      onClick: () => setCancelOpen(true),
+    });
   if (p.canRebook && finalOrPast)
     items.push({ key: 'again', label: 'Book again', icon: <Repeat />, variant: 'outline', to: `/bookings/new?venueId=${b.venue.id}&purpose=${encodeURIComponent(b.purpose)}` });
 
@@ -178,7 +203,7 @@ export function BookingDetailPage() {
               </div>
               <div className="flex items-center gap-2">
                 <TimingChip booking={b} today={now?.date} />
-                <StatusBadge status={b.status} />
+                <StatusBadge status={b.status} queuePosition={b.queuePosition} />
               </div>
             </div>
             <div className="px-5 pb-5">
@@ -219,6 +244,9 @@ export function BookingDetailPage() {
             <InfoRow icon={UserRound} label="Requested by">
               {b.requester.fullName}
               <span className="block text-[12.5px] text-muted">{b.requester.email}</span>
+            </InfoRow>
+            <InfoRow icon={IdCard} label="USN / Faculty ID">
+              <span className="font-mono">{b.idNumber ?? 'Not recorded'}</span>
             </InfoRow>
             <InfoRow icon={Hash} label="Reference">
               <span className="font-mono">{b.reference}</span>

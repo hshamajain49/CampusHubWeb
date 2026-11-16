@@ -17,6 +17,8 @@ export const ERROR_HTTP_STATUS = {
   DEPARTMENT_NOT_FOUND: 404,
   CATEGORY_NOT_FOUND: 404,
   BOOKING_CONFLICT: 409,
+  /** The member already has a confirmed or queued booking of this venue for (part of) this time. */
+  DUPLICATE_BOOKING: 409,
   VENUE_BLOCKED: 409,
   VENUE_INACTIVE: 409,
   INVALID_STATUS_TRANSITION: 409,
@@ -40,7 +42,7 @@ export const ERROR_HTTP_STATUS = {
   LEAD_TIME_NOT_MET: 422,
   TOO_FAR_IN_ADVANCE: 422,
   CAPACITY_EXCEEDED: 422,
-  PENDING_LIMIT_REACHED: 422,
+  BOOKING_LIMIT_REACHED: 422,
   MODIFICATION_WINDOW_CLOSED: 422,
   CANCELLATION_WINDOW_CLOSED: 422,
   BLOCK_IN_PAST: 422,
@@ -103,6 +105,8 @@ export const DEFAULT_ERROR_MESSAGES: Partial<Record<ErrorCode, string>> = {
   SERVICE_DEPARTMENT_REQUIRED: "Choose the staff member's department.",
   BOOKING_CONFLICT:
     'This venue is already booked for the selected date/time. Please choose a different slot.',
+  DUPLICATE_BOOKING: 'You already have a booking at this venue for this time.',
+  BOOKING_LIMIT_REACHED: 'You already have the maximum number of upcoming bookings. Cancel one before booking again.',
   VENUE_INACTIVE: 'This venue is no longer accepting bookings.',
   BOOKING_CHANGED:
     'This booking was updated by someone else. Review the latest details and try again.',
@@ -130,6 +134,7 @@ export const FIELD_FOR_ERROR: Partial<Record<ErrorCode, string>> = {
   VENUE_NOT_FOUND: 'venueId',
   VENUE_INACTIVE: 'venueId',
   BOOKING_CONFLICT: 'startTime',
+  DUPLICATE_BOOKING: 'startTime',
   VENUE_BLOCKED: 'startTime',
   VENUE_NAME_TAKEN: 'name',
   EMAIL_ALREADY_REGISTERED: 'email',

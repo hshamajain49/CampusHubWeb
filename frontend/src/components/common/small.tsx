@@ -57,7 +57,7 @@ export function Pagination({
         Showing {formatNumber(from)}–{formatNumber(to)} of {formatNumber(total)}
       </p>
       {showControls && (
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center justify-center gap-1">
           {onPageSize && pageSizes && (
             <Select
               aria-label="Rows per page"
@@ -70,23 +70,33 @@ export function Pagination({
           <button type="button" className={cn(btn, 'text-muted hover:bg-surface-muted')} disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
             <ChevronLeft className="size-4" />
           </button>
-          {nums.map((n, i) =>
-            n === '…' ? (
-              <span key={`e${i}`} className="w-6 text-center text-subtle">
-                …
-              </span>
-            ) : (
-              <button
-                key={n}
-                type="button"
-                aria-current={n === page ? 'page' : undefined}
-                onClick={() => onPage(n)}
-                className={cn(btn, n === page ? 'bg-primary text-white' : 'text-ink hover:bg-surface-muted')}
-              >
-                {n}
-              </button>
-            ),
-          )}
+          {/* Phones: "2 / 9" between the arrows; the number buttons need ~330 px next to the page-size select. */}
+          <span className="tabular min-w-12 px-1 text-center text-sm font-semibold text-ink sm:hidden">
+            <span className="sr-only">Page </span>
+            {page}
+            <span aria-hidden> / </span>
+            <span className="sr-only"> of </span>
+            {pages}
+          </span>
+          <span className="hidden items-center gap-1 sm:flex">
+            {nums.map((n, i) =>
+              n === '…' ? (
+                <span key={`e${i}`} className="w-6 text-center text-subtle">
+                  …
+                </span>
+              ) : (
+                <button
+                  key={n}
+                  type="button"
+                  aria-current={n === page ? 'page' : undefined}
+                  onClick={() => onPage(n)}
+                  className={cn(btn, n === page ? 'bg-primary text-white' : 'text-ink hover:bg-surface-muted')}
+                >
+                  {n}
+                </button>
+              ),
+            )}
+          </span>
           <button type="button" className={cn(btn, 'text-muted hover:bg-surface-muted')} disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Next page">
             <ChevronRight className="size-4" />
           </button>
@@ -128,7 +138,7 @@ export function SkipLink() {
   );
 }
 
-/** Segmented control for small filter sets ("All | Pending | Approved"). */
+/** Segmented control for small filter sets ("All | Confirmed | In queue"). */
 export function Segmented<T extends string>({
   value,
   onChange,

@@ -50,6 +50,7 @@ export async function publish(tx: Tx, event: DomainEvent): Promise<string[]> {
       date: b.date,
       startTime: b.start_time,
       endTime: b.end_time,
+      status: b.status,
     },
     b.today,
   );
@@ -67,7 +68,7 @@ export async function publish(tx: Tx, event: DomainEvent): Promise<string[]> {
       plan.audience === 'admins' ? [] : [b.requester_id],
     );
     for (const r of recipients.rows) {
-      if (r.id === event.actorId) continue;
+      if (r.id === event.actorId && !plan.includeActor) continue;
       const emailStatus = plan.email && b.email_notifications_enabled && r.email_notifications ? 'pending' : 'none';
       const pushStatus = plan.push && pushEnabled && r.has_push ? 'pending' : 'none';
       const linkPath = plan.audience === 'admins' ? `/admin/bookings/${b.id}` : `/bookings/${b.id}`;

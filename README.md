@@ -2,9 +2,11 @@
 
 Venue booking and complaint registration for a campus.
 
-- **Venue booking.** Students, faculty and department staff request campus venues (seminar halls, labs,
-  auditoriums); a Super Admin reviews, approves or rejects them. Bookings are conflict-free by construction:
-  PostgreSQL exclusion constraints make double-booking impossible even under concurrent requests.
+- **Venue booking.** Students, faculty and department staff book campus venues (seminar halls, labs,
+  auditoriums) with no approval step: the first valid request for a time is confirmed instantly, later requests for
+  that time join a first-in, first-out queue and are confirmed automatically when it frees up. The admin is informed,
+  never asked. A PostgreSQL exclusion constraint makes two confirmed bookings of one slot impossible even under
+  concurrent requests. See [docs/BOOKINGS.md](docs/BOOKINGS.md).
 - **Complaints.** Anyone reports a campus problem (a broken fan, no Wi-Fi). The category routes it to a service
   department, whose staff do the work; the reporter approves the fix or sends it back. See [Complaints](#complaints).
 

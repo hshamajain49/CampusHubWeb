@@ -195,6 +195,16 @@ export const attendeesSchema = z
   .min(1, 'Enter at least 1')
   .max(100_000, 'Enter at most 100,000');
 
+/** USN (students) or faculty / staff ID: stored upper case, mirrors bookings_id_number_format. */
+export const ID_NUMBER_PATTERN = /^[A-Z0-9][A-Z0-9./-]{2,29}$/;
+export const idNumberSchema = z
+  .string({ message: 'Enter your USN or faculty ID' })
+  .trim()
+  .toUpperCase()
+  .min(1, 'Enter your USN or faculty ID')
+  .max(30, 'Use at most 30 characters')
+  .regex(ID_NUMBER_PATTERN, 'Use 3–30 letters or digits ("-", "/" and "." are allowed)');
+
 export const bookingCreateBody = z.strictObject({
   venueId: uuid,
   date: isoDate,
@@ -202,6 +212,7 @@ export const bookingCreateBody = z.strictObject({
   endTime: timeSchema,
   purpose: purposeSchema,
   expectedAttendees: attendeesSchema.nullable().optional(),
+  idNumber: idNumberSchema,
 });
 
 export const bookingUpdateBody = requireOne(
@@ -211,9 +222,10 @@ export const bookingUpdateBody = requireOne(
     startTime: timeSchema.optional(),
     endTime: timeSchema.optional(),
     expectedAttendees: attendeesSchema.nullable().optional(),
+    idNumber: idNumberSchema.optional(),
     version: z.number().int().min(1),
   }),
-  ['purpose', 'date', 'startTime', 'endTime', 'expectedAttendees'],
+  ['purpose', 'date', 'startTime', 'endTime', 'expectedAttendees', 'idNumber'],
 );
 
 export const bookingCancelBody = z.strictObject({
@@ -256,13 +268,6 @@ export const reasonSchema = z
   .transform((s) => s.trim())
   .pipe(z.string().min(3, 'Please provide a reason').max(500, 'Reason must be at most 500 characters'));
 
-export const approveBody = z.strictObject({
-  version: z.number().int().min(1),
-  note: z.string().transform((s) => s.trim()).pipe(z.string().max(500)).optional(),
-});
-
-export const rejectBody = z.strictObject({ version: z.number().int().min(1), reason: reasonSchema });
-
 export const adminCancelBody = z.strictObject({ reason: reasonSchema, version: z.number().int().min(1).optional() });
 
 export const calendarQuery = z
@@ -270,7 +275,7 @@ export const calendarQuery = z
     from: isoDate,
     to: isoDate,
     venueId: uuid.optional(),
-    statuses: csvOf(['pending', 'approved']).default(['pending', 'approved']),
+    statuses: csvOf(['confirmed', 'queued', 'completed']).default(['confirmed', 'completed']),
     includeBlocks: boolFromQuery.default(true),
   })
   .refine((v) => diffDays(v.to, v.from) >= 0 && diffDays(v.to, v.from) <= 92, {
@@ -405,9 +410,8 @@ export const settingsUpdateBody = requireOne(
     maxDurationMinutes: minutesRange(5, 1440).optional(),
     maxAdvanceDays: minutesRange(1, 730).optional(),
     minLeadTimeMinutes: minutesRange(0, 20160).optional(),
-    cancellationCutoffMinutes: minutesRange(0, 20160).optional(),
     modificationCutoffMinutes: minutesRange(0, 20160).optional(),
-    maxPendingPerUser: minutesRange(1, 100).optional(),
+    maxActivePerUser: minutesRange(1, 100).optional(),
     selfRegistrationEnabled: z.boolean().optional(),
     allowedEmailDomains: z.array(z.string().trim().toLowerCase().min(1).max(253)).max(20).optional(),
     emailNotificationsEnabled: z.boolean().optional(),
@@ -419,8 +423,8 @@ export const settingsUpdateBody = requireOne(
   }),
   [
     'institutionName', 'supportEmail', 'operatingHoursStart', 'operatingHoursEnd', 'timeStepMinutes',
-    'minDurationMinutes', 'maxDurationMinutes', 'maxAdvanceDays', 'minLeadTimeMinutes', 'cancellationCutoffMinutes',
-    'modificationCutoffMinutes', 'maxPendingPerUser', 'selfRegistrationEnabled', 'allowedEmailDomains',
+    'minDurationMinutes', 'maxDurationMinutes', 'maxAdvanceDays', 'minLeadTimeMinutes',
+    'modificationCutoffMinutes', 'maxActivePerUser', 'selfRegistrationEnabled', 'allowedEmailDomains',
     'emailNotificationsEnabled', 'emailDailyLimit', 'reminderLeadMinutes', 'complaintAutoResolveDays',
     'complaintReopenWindowDays', 'complaintMaxOpenPerUser',
   ],

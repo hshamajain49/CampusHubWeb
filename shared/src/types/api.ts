@@ -43,6 +43,8 @@ export interface Me {
   emailNotifications: boolean;
   createdAt: string;
   lastSignInAt: string | null;
+  /** USN / faculty ID from the member's latest booking, to prefill the booking form. */
+  lastIdNumber: string | null;
 }
 
 export interface BookingRules {
@@ -53,9 +55,9 @@ export interface BookingRules {
   maxDurationMinutes: number;
   maxAdvanceDays: number;
   minLeadTimeMinutes: number;
-  cancellationCutoffMinutes: number;
   modificationCutoffMinutes: number;
-  maxPendingPerUser: number;
+  /** Most upcoming bookings (confirmed + queued) one member may hold. */
+  maxActivePerUser: number;
 }
 
 export interface PublicSettings {
@@ -119,8 +121,8 @@ export interface Venue extends VenueSummary {
 export interface AdminVenue extends Venue {
   createdBy: PersonRef | null;
   stats: {
-    upcomingApprovedCount: number;
-    pendingCount: number;
+    upcomingConfirmedCount: number;
+    queuedCount: number;
     totalBookings: number;
     nextBooking: BookingSummary | null;
     openComplaints: number;
@@ -134,8 +136,6 @@ export interface BookingPermissions {
   canRebook: boolean;
 }
 export interface AdminBookingPermissions {
-  canApprove: boolean;
-  canReject: boolean;
   canCancel: boolean;
   canDownloadConfirmation: boolean;
 }
@@ -152,8 +152,11 @@ export interface BookingSummary {
   durationMinutes: number;
   purpose: string;
   expectedAttendees: number | null;
+  /** USN / faculty ID entered when booking (null on bookings made before the field existed). */
+  idNumber: string | null;
   status: BookingStatus;
-  rejectionReason: string | null;
+  /** 1-based place among queued requests overlapping this one (queued bookings only). */
+  queuePosition: number | null;
   cancellationReason: string | null;
   isUpcoming: boolean;
   isHappeningNow: boolean;
@@ -162,11 +165,14 @@ export interface BookingSummary {
   permissions: BookingPermissions;
 }
 
+/** History rows written before approvals were retired can carry the old statuses. */
+export type HistoryStatus = BookingStatus | 'pending' | 'approved' | 'rejected';
+
 export interface HistoryEntry {
   id: number;
   eventType: HistoryEvent;
-  fromStatus: BookingStatus | null;
-  toStatus: BookingStatus;
+  fromStatus: HistoryStatus | null;
+  toStatus: HistoryStatus;
   actor: PersonWithRole | null;
   note: string | null;
   changes: Record<string, { from: unknown; to: unknown }>;
@@ -184,9 +190,8 @@ export interface Booking extends Omit<BookingSummary, 'venue'> {
     isActive: boolean;
   };
   requester: { id: string; fullName: string; email: string; role: Role; department: string | null };
-  decidedBy: PersonRef | null;
-  decidedAt: string | null;
-  approvalNote: string | null;
+  confirmedAt: string | null;
+  queuedAt: string | null;
   cancelledBy: PersonWithRole | null;
   cancelledAt: string | null;
   version: number;
@@ -206,9 +211,11 @@ export interface AdminBookingListItem {
   durationMinutes: number;
   purpose: string;
   expectedAttendees: number | null;
+  idNumber: string | null;
   status: BookingStatus;
+  queuePosition: number | null;
   createdAt: string;
-  decidedAt: string | null;
+  confirmedAt: string | null;
   version: number;
   permissions: AdminBookingPermissions;
 }
@@ -218,10 +225,8 @@ export interface AdminBooking extends Omit<AdminBookingListItem, 'requester'> {
     department: string | null;
     stats: { totalBookings: number; upcomingBookings: number };
   };
-  rejectionReason: string | null;
   cancellationReason: string | null;
-  decidedBy: PersonRef | null;
-  approvalNote: string | null;
+  queuedAt: string | null;
   cancelledBy: PersonWithRole | null;
   cancelledAt: string | null;
   updatedAt: string;
@@ -237,6 +242,8 @@ export interface AvailabilityInterval {
   status: BookingStatus | null;
   blockType: BlockType | null;
   label: string;
+  /** Booked intervals: queued requests waiting for (part of) this time. */
+  queueLength: number;
 }
 
 export interface VenueAvailability {
@@ -250,7 +257,12 @@ export interface VenueAvailability {
 }
 
 export interface AvailabilityCheck {
+  /** True when the request passes every rule: it would be confirmed, or queued if the time is taken. */
   available: boolean;
+  /** What submitting would do right now: confirm, join the queue, or nothing (rule violations). */
+  outcome: 'confirm' | 'queue' | 'unavailable';
+  /** The place the request would take in the queue (outcome 'queue'). */
+  queuePosition: number | null;
   violations: { code: string; field: string; message: string }[];
   conflicts: AvailabilityInterval[];
 }
@@ -315,16 +327,16 @@ export interface UserListItem {
   mustChangePassword: boolean;
   createdAt: string;
   lastSignInAt: string | null;
-  bookingCounts: { total: number; upcoming: number; pending: number };
+  bookingCounts: { total: number; upcoming: number; queued: number };
 }
 
 export interface UserDetail extends Omit<UserListItem, 'bookingCounts'> {
   bookingCounts: {
     total: number;
     upcoming: number;
-    pending: number;
-    approved: number;
-    rejected: number;
+    confirmed: number;
+    queued: number;
+    completed: number;
     cancelled: number;
     expired: number;
   };
@@ -357,7 +369,7 @@ export interface AuditLogEntry {
 }
 
 export interface MemberDashboard {
-  counts: { pending: number; upcomingApproved: number; history: number };
+  counts: { queued: number; upcomingConfirmed: number; history: number };
   nextBooking: BookingSummary | null;
   recentBookings: BookingSummary[];
   complaints: { open: number; awaitingYourReview: number };
@@ -366,18 +378,22 @@ export interface MemberDashboard {
 
 export interface AdminDashboard {
   kpis: {
-    pendingCount: number;
-    oldestPendingSubmittedAt: string | null;
-    todayApprovedCount: number;
-    next7DaysApprovedCount: number;
+    /** Upcoming queued requests waiting for a slot. */
+    queuedCount: number;
+    todayConfirmedCount: number;
+    next7DaysConfirmedCount: number;
     activeVenues: number;
     inactiveVenues: number;
     activeMembers: number;
-    approvalRate30d: number;
+    /** Bookings made in the last 30 days. */
+    newBookings30d: number;
+    /** Queued requests that got their slot in the last 30 days. */
+    promoted30d: number;
   };
   complaintKpis: ComplaintKpis;
   complaintsNeedingReassignment: ComplaintSummary[];
-  needsAttention: AdminBookingListItem[];
+  /** Upcoming queued requests, soonest first. */
+  queuedRequests: AdminBookingListItem[];
   todaySchedule: AdminBookingListItem[];
   upcomingBlocks: VenueBlock[];
   recentActivity: {
@@ -386,7 +402,7 @@ export interface AdminDashboard {
     reference: string;
     venueName: string;
     eventType: HistoryEvent;
-    toStatus: BookingStatus;
+    toStatus: HistoryStatus;
     actor: PersonWithRole | null;
     createdAt: string;
   }[];
@@ -394,14 +410,19 @@ export interface AdminDashboard {
 
 export interface ReportSummary {
   range: { from: string; to: string };
-  totals: { requests: number; pending: number; approved: number; rejected: number; cancelled: number; expired: number };
-  approvalRate: number;
-  avgDecisionHours: number;
-  approvedHours: number;
-  byVenue: { venueId: string; venueName: string; requests: number; approved: number; approvedHours: number; utilizationPct: number }[];
-  byRole: { role: MemberRole; requests: number; approved: number }[];
-  byWeekday: { weekday: number; label: string; approved: number }[];
-  byHour: { hour: number; approved: number }[];
-  trend: { date: string; submitted: number; approved: number }[];
+  /** confirmed = upcoming confirmed; booked = confirmed + completed (got the venue). */
+  totals: { requests: number; booked: number; confirmed: number; queued: number; completed: number; cancelled: number; expired: number };
+  /** Share of requests that had to join a queue (0–1). */
+  queuedShare: number;
+  /** Queued requests that were later confirmed. */
+  promotedCount: number;
+  /** Average hours from joining the queue to getting the slot, over promoted requests. */
+  avgQueueWaitHours: number;
+  bookedHours: number;
+  byVenue: { venueId: string; venueName: string; requests: number; booked: number; bookedHours: number; utilizationPct: number }[];
+  byRole: { role: MemberRole; requests: number; booked: number }[];
+  byWeekday: { weekday: number; label: string; booked: number }[];
+  byHour: { hour: number; booked: number }[];
+  trend: { date: string; submitted: number; booked: number }[];
   generatedAt: string;
 }

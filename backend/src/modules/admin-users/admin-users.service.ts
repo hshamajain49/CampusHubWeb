@@ -18,15 +18,16 @@ import type { Actor } from '../../middleware/authenticate.js';
 import { loadCampus } from '../../domain/settings.js';
 import { createCredentialUser, hashPassword, revokeSessions, sendPasswordReset } from '../../lib/auth-accounts.js';
 import { audit } from '../audit/audit-writer.js';
-import { BOOKING_SELECT } from '../bookings/booking.queries.js';
+import { BOOKING_SELECT, UPCOMING_SQL } from '../bookings/booking.queries.js';
+import { promoteAndNotify } from '../bookings/bookings.service.js';
 import { toAdminListItem } from '../bookings/booking.mapper.js';
 
 const iso = (d: Date | null) => (d ? new Date(d).toISOString() : null);
 
 const COUNTS = `
   (select count(*) from public.bookings b where b.requester_id = p.id) as total,
-  (select count(*) from public.bookings b where b.requester_id = p.id and b.status in ('pending','approved') and (b.booking_date + b.end_time) > $NOW::timestamp) as upcoming,
-  (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'pending') as pending`;
+  (select count(*) from public.bookings b where b.requester_id = p.id and ${UPCOMING_SQL('$NOW::timestamp')}) as upcoming,
+  (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'queued' and (b.booking_date + b.start_time) > $NOW::timestamp) as queued`;
 
 function baseUser(r: any) {
   return {
@@ -96,7 +97,7 @@ export async function listUsers(q: {
   );
   const data: UserListItem[] = rows.map((r) => ({
     ...baseUser(r),
-    bookingCounts: { total: r.total, upcoming: r.upcoming, pending: r.pending },
+    bookingCounts: { total: r.total, upcoming: r.upcoming, queued: r.queued },
   }));
   return { data, meta: listMeta(q.page, q.pageSize, total) };
 }
@@ -106,8 +107,8 @@ export async function getUser(actor: Actor, id: string): Promise<UserDetail> {
   const now = campus.localNow.replace('T', ' ');
   const { rows } = await pool.query(
     `select p.*, ${COUNTS.replaceAll('$NOW', '$2')},
-            (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'approved') as approved,
-            (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'rejected') as rejected,
+            (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'confirmed') as confirmed,
+            (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'completed') as completed,
             (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'cancelled') as cancelled,
             (select count(*) from public.bookings b where b.requester_id = p.id and b.status = 'expired') as expired,
             sd.name as sd_name, sd.is_active as sd_active
@@ -123,9 +124,9 @@ export async function getUser(actor: Actor, id: string): Promise<UserDetail> {
     bookingCounts: {
       total: r.total,
       upcoming: r.upcoming,
-      pending: r.pending,
-      approved: r.approved,
-      rejected: r.rejected,
+      confirmed: r.confirmed,
+      queued: r.queued,
+      completed: r.completed,
       cancelled: r.cancelled,
       expired: r.expired,
     },
@@ -212,13 +213,25 @@ export async function deactivateUser(actor: Actor, id: string, body: { cancelUpc
     if (!t.is_active) return;
     if (body.cancelUpcomingBookings) {
       const { localNow } = await loadCampus(tx);
+      const now = localNow.replace('T', ' ');
+      // Venues first (in a fixed order), like every other booking writer; then the member's bookings.
+      const venues = (
+        await tx.query<{ id: string }>(
+          `select v.id from public.venues v
+            where v.id in (select b.venue_id from public.bookings b where b.requester_id = $1 and ${UPCOMING_SQL('$2::timestamp')})
+            order by v.id for update`,
+          [id, now],
+        )
+      ).rows.map((r) => r.id);
       const res = await tx.query(
-        `update public.bookings set status = 'cancelled', cancelled_by = $2, cancelled_at = now(),
+        `update public.bookings b set status = 'cancelled', cancelled_by = $3, cancelled_at = now(),
                 cancellation_reason = 'Account deactivated by administrator'
-          where requester_id = $1 and (status = 'pending' or (status = 'approved' and lower(slot) > $3::timestamp))`,
-        [id, actor.id, localNow.replace('T', ' ')],
+          where b.requester_id = $1 and ${UPCOMING_SQL('$2::timestamp')}`,
+        [id, now, actor.id],
       );
       cancelled = res.rowCount ?? 0;
+      // The member's confirmed slots go to whoever queued for them.
+      for (const venueId of venues) await promoteAndNotify(tx, venueId, actor.id);
     }
     await tx.query('update public.profiles set is_active = false where id = $1', [id]);
     await revokeSessions(tx, id);

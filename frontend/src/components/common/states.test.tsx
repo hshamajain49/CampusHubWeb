@@ -21,11 +21,19 @@ describe('state components', () => {
   });
 
   it('StatusBadge labels every status in words, not just colour', () => {
-    const { rerender } = render(<StatusBadge status="pending" />);
-    expect(screen.getByText('Pending Approval')).toBeInTheDocument();
-    rerender(<StatusBadge status="approved" />);
-    expect(screen.getByText('Approved')).toBeInTheDocument();
-    rerender(<StatusBadge status="rejected" />);
-    expect(screen.getByText('Rejected')).toBeInTheDocument();
+    const { rerender } = render(<StatusBadge status="confirmed" />);
+    expect(screen.getByText('Confirmed')).toBeInTheDocument();
+    rerender(<StatusBadge status="completed" />);
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+    rerender(<StatusBadge status="expired" />);
+    expect(screen.getByText('Expired')).toBeInTheDocument();
+  });
+
+  it('StatusBadge shows the place in the queue for queued bookings only', () => {
+    const { rerender } = render(<StatusBadge status="queued" queuePosition={3} />);
+    expect(screen.getByText('In Queue')).toBeInTheDocument();
+    expect(screen.getByText('· #3')).toBeInTheDocument();
+    rerender(<StatusBadge status="confirmed" queuePosition={3} />);
+    expect(screen.queryByText('· #3')).not.toBeInTheDocument();
   });
 });

@@ -25,9 +25,8 @@ function rulesOf(s: AppSettings) {
     maxDurationMinutes: s.maxDurationMinutes,
     maxAdvanceDays: s.maxAdvanceDays,
     minLeadTimeMinutes: s.minLeadTimeMinutes,
-    cancellationCutoffMinutes: s.cancellationCutoffMinutes,
     modificationCutoffMinutes: s.modificationCutoffMinutes,
-    maxPendingPerUser: s.maxPendingPerUser,
+    maxActivePerUser: s.maxActivePerUser,
   };
 }
 
@@ -98,9 +97,8 @@ const COLUMN: Record<string, string> = {
   maxDurationMinutes: 'max_duration_minutes',
   maxAdvanceDays: 'max_advance_days',
   minLeadTimeMinutes: 'min_lead_time_minutes',
-  cancellationCutoffMinutes: 'cancellation_cutoff_minutes',
   modificationCutoffMinutes: 'modification_cutoff_minutes',
-  maxPendingPerUser: 'max_pending_per_user',
+  maxActivePerUser: 'max_active_per_user',
   selfRegistrationEnabled: 'self_registration_enabled',
   allowedEmailDomains: 'allowed_email_domains',
   emailNotificationsEnabled: 'email_notifications_enabled',

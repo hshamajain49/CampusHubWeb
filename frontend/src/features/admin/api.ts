@@ -16,7 +16,7 @@ import type {
 import { apiFetch, apiFetchList } from '@/lib/api-client';
 import { usePollingInterval } from '@/providers/realtime-provider';
 
-export type StatusCounts = { all: number; pending: number; approved: number; rejected: number; cancelled: number; expired: number };
+export type StatusCounts = { all: number; confirmed: number; queued: number; completed: number; cancelled: number; expired: number };
 
 export interface AdminBookingsParams {
   status?: string[];
@@ -59,19 +59,17 @@ export function invalidateBookingViews(qc: QueryClient, b?: { id: string; reques
   }
 }
 
-export function useDecision() {
+/** Admins only cancel: bookings are confirmed or queued without approval (docs/BOOKINGS.md). */
+export function useAdminCancel() {
   const qc = useQueryClient();
-  const run = (path: string) => (args: { id: string; body: Record<string, unknown> }) =>
-    apiFetch<AdminBooking>(`/admin/bookings/${args.id}/${path}`, { method: 'POST', body: args.body });
-  const onSuccess = (b: AdminBooking) => {
-    qc.setQueryData(['admin', 'booking', b.id], b);
-    invalidateBookingViews(qc, b);
-  };
-  return {
-    approve: useMutation({ mutationFn: run('approve'), onSuccess }),
-    reject: useMutation({ mutationFn: run('reject'), onSuccess }),
-    cancel: useMutation({ mutationFn: run('cancel'), onSuccess }),
-  };
+  return useMutation({
+    mutationFn: (args: { id: string; body: { version: number; reason: string } }) =>
+      apiFetch<AdminBooking>(`/admin/bookings/${args.id}/cancel`, { method: 'POST', body: args.body }),
+    onSuccess: (b: AdminBooking) => {
+      qc.setQueryData(['admin', 'booking', b.id], b);
+      invalidateBookingViews(qc, b);
+    },
+  });
 }
 
 export function useCalendar(params: { from?: string; to?: string; venueId?: string; statuses: string[]; includeBlocks: boolean }) {
@@ -125,7 +123,7 @@ export function useVenueMutations() {
     }),
     deactivate: useMutation({
       mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
-        apiFetch<{ venue: AdminVenue; affected: { rejected: number; cancelled: number; keptUpcoming: number } }>(`/admin/venues/${id}/deactivate`, { method: 'POST', body }),
+        apiFetch<{ venue: AdminVenue; affected: { cancelled: number; keptUpcoming: number } }>(`/admin/venues/${id}/deactivate`, { method: 'POST', body }),
       onSuccess: (r) => {
         invalidateVenues(qc, r.venue.id);
         qc.invalidateQueries({ queryKey: ['admin', 'bookings'] });
@@ -163,7 +161,7 @@ export function useBlocks(params: { venueId?: string; includePast?: boolean; pag
   });
 }
 
-export type BlockSaveResult = { block: VenueBlock; affectedBookings: { rejected: number; cancelled: number; references: string[] } };
+export type BlockSaveResult = { block: VenueBlock; affectedBookings: { cancelled: number; references: string[] } };
 export type { BlockConflict };
 
 export function useBlockMutations() {

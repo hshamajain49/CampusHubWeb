@@ -95,7 +95,8 @@ const routes: RouteObject[] = [
                 children: [
                   { path: '/admin', element: <Navigate to="/admin/dashboard" replace /> },
                   { path: '/admin/dashboard', ...admin(A.dashboard) },
-                  { path: '/admin/approvals', ...admin(A.approvals) },
+                  // Approvals were retired (docs/BOOKINGS.md); old links land on the queued requests.
+                  { path: '/admin/approvals', element: <Navigate to="/admin/bookings?status=queued" replace /> },
                   { path: '/admin/bookings', ...admin(A.bookings) },
                   { path: '/admin/bookings/:bookingId', ...admin(A.bookingDetail) },
                   { path: '/admin/calendar', ...admin(A.calendar) },

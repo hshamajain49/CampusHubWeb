@@ -17,9 +17,24 @@ interface Props {
 }
 
 const kindClass = (i: AvailabilityInterval) =>
-  i.isMine ? 'bg-secondary-soft ring-1 ring-inset ring-secondary' : i.kind === 'booked' ? 'slot-booked' : i.kind === 'on_hold' ? 'slot-hold' : 'slot-blocked';
+  i.kind === 'queued'
+    ? 'slot-hold ring-1 ring-inset ring-secondary'
+    : i.isMine
+      ? 'bg-secondary-soft ring-1 ring-inset ring-secondary'
+      : i.kind === 'booked'
+        ? 'slot-booked'
+        : 'slot-blocked';
 
-const kindWord = (i: AvailabilityInterval) => (i.isMine ? 'your booking' : i.kind === 'booked' ? 'booked' : i.kind === 'on_hold' ? 'on hold' : 'blocked');
+const kindWord = (i: AvailabilityInterval) =>
+  i.kind === 'queued'
+    ? 'your queued request'
+    : i.isMine
+      ? 'your booking'
+      : i.kind === 'booked'
+        ? i.queueLength
+          ? `booked, ${i.queueLength} in queue`
+          : 'booked'
+        : 'blocked';
 
 export function DayAvailabilityBar({ date, open, close, intervals, selection, conflict, compact, showTicks = true, className }: Props) {
   const mdUp = useIsMdUp();
@@ -89,10 +104,10 @@ export function DayAvailabilityBar({ date, open, close, intervals, selection, co
 
 export function AvailabilityLegend({ className }: { className?: string }) {
   const items = [
-    ['slot-booked', 'Booked'],
-    ['slot-hold', 'On hold (awaiting approval)'],
+    ['slot-booked', 'Booked (you can join the queue)'],
     ['slot-blocked', 'Unavailable'],
     ['bg-secondary-soft ring-1 ring-inset ring-secondary', 'Your booking'],
+    ['slot-hold ring-1 ring-inset ring-secondary', 'Your queued request'],
   ];
   return (
     <ul className={cn('flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-muted', className)}>

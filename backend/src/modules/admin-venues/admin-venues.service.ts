@@ -12,11 +12,12 @@ import { audit } from '../audit/audit-writer.js';
 import { publish } from '../notifications/notifier.js';
 import { toVenue } from '../venues/venues.service.js';
 import { BOOKING_SELECT_INNER, normalize } from '../bookings/bookings.service.js';
+import { UPCOMING_SQL } from '../bookings/booking.queries.js';
 import { toBookingSummary } from '../bookings/booking.mapper.js';
 
 const STATS = `
-  (select count(*) from public.bookings b where b.venue_id = v.id and b.status = 'approved' and (b.booking_date + b.end_time) > $NOW::timestamp) as upcoming_approved,
-  (select count(*) from public.bookings b where b.venue_id = v.id and b.status = 'pending' and (b.booking_date + b.start_time) > $NOW::timestamp) as pending_count,
+  (select count(*) from public.bookings b where b.venue_id = v.id and b.status = 'confirmed' and (b.booking_date + b.end_time) > $NOW::timestamp) as upcoming_confirmed,
+  (select count(*) from public.bookings b where b.venue_id = v.id and b.status = 'queued' and (b.booking_date + b.start_time) > $NOW::timestamp) as queued_count,
   (select count(*) from public.bookings b where b.venue_id = v.id) as total_bookings,
   (select count(*) from public.complaints x where x.venue_id = v.id
      and x.status in ('pending_review','in_progress','awaiting_confirmation')) as open_complaints,
@@ -27,8 +28,8 @@ function toAdminVenue(r: any, nextBooking: AdminVenue['stats']['nextBooking'] = 
     ...toVenue(r),
     createdBy: r.created_by ? { id: r.created_by, fullName: r.created_by_name } : null,
     stats: {
-      upcomingApprovedCount: r.upcoming_approved,
-      pendingCount: r.pending_count,
+      upcomingConfirmedCount: r.upcoming_confirmed,
+      queuedCount: r.queued_count,
       totalBookings: r.total_bookings,
       nextBooking,
       openComplaints: r.open_complaints ?? 0,
@@ -73,8 +74,8 @@ export async function getAdminVenue(id: string): Promise<AdminVenue> {
   );
   if (!rows[0]) throw appError('VENUE_NOT_FOUND');
   const next = await pool.query(
-    `select * from (${BOOKING_SELECT_INNER}) b where b.venue_id = $1 and b.status in ('pending','approved')
-       and (b.booking_date + b.end_time) > $2::timestamp order by b.booking_date, b.start_time limit 1`,
+    `select * from (${BOOKING_SELECT_INNER}) b where b.venue_id = $1 and ${UPCOMING_SQL('$2::timestamp')}
+      order by b.booking_date, b.start_time limit 1`,
     [id, now],
   );
   return toAdminVenue(rows[0], next.rows[0] ? toBookingSummary(normalize(next.rows[0]), campus.settings, campus.localNow) : null);
@@ -133,37 +134,31 @@ export async function updateVenue(actor: Actor, id: string, body: VenueUpdateBod
   return getAdminVenue(id);
 }
 
-/** Rejects pending and cancels approved bookings (shared by algorithms G and H). */
+/**
+ * Cancels confirmed bookings and queued requests (shared by algorithms G and H) and tells each member why. The caller
+ * holds the venue lock and offers any freed time to the queue afterwards (blocks) or not at all (deactivated venue).
+ */
 export async function closeBookings(
   tx: Tx,
   actor: Actor,
-  rows: { id: string; status: string }[],
+  rows: { id: string; status: 'confirmed' | 'queued' }[],
   note: string,
-): Promise<{ rejected: number; cancelled: number }> {
+): Promise<{ cancelled: number }> {
+  if (!rows.length) return { cancelled: 0 };
   await tx.setNote(note);
-  const pending = rows.filter((r) => r.status === 'pending').map((r) => r.id);
-  const approved = rows.filter((r) => r.status === 'approved').map((r) => r.id);
-  if (pending.length) {
-    await tx.query(
-      `update public.bookings set status = 'rejected', rejection_reason = $2, decided_by = $3, decided_at = now() where id = any($1::uuid[])`,
-      [pending, note.slice(0, 500), actor.id],
-    );
+  await tx.query(
+    `update public.bookings set status = 'cancelled', cancellation_reason = $2, cancelled_by = $3, cancelled_at = now() where id = any($1::uuid[])`,
+    [rows.map((r) => r.id), note.slice(0, 500), actor.id],
+  );
+  for (const r of rows) {
+    await publish(tx, { type: 'booking.cancelled', bookingId: r.id, actorId: actor.id, data: { cancelledBy: 'system', previousStatus: r.status, note } });
   }
-  if (approved.length) {
-    await tx.query(
-      `update public.bookings set status = 'cancelled', cancellation_reason = $2, cancelled_by = $3, cancelled_at = now() where id = any($1::uuid[])`,
-      [approved, note.slice(0, 500), actor.id],
-    );
-  }
-  for (const bid of pending) await publish(tx, { type: 'booking.rejected', bookingId: bid, actorId: actor.id, data: { note } });
-  for (const bid of approved)
-    await publish(tx, { type: 'booking.cancelled', bookingId: bid, actorId: actor.id, data: { cancelledBy: 'system', note } });
-  return { rejected: pending.length, cancelled: approved.length };
+  return { cancelled: rows.length };
 }
 
 // ─────────────────────────── H. Deactivate (E30) ───────────────────────────
 export async function deactivateVenue(actor: Actor, id: string, body: { cancelUpcomingBookings: boolean; reason?: string }) {
-  let affected = { rejected: 0, cancelled: 0, keptUpcoming: 0 };
+  let affected = { cancelled: 0, keptUpcoming: 0 };
   let alreadyInactive = false;
   await withTransaction({ actorId: actor.id }, async (tx) => {
     const venue = (await tx.query('select * from public.venues where id = $1 for update', [id])).rows[0];
@@ -174,9 +169,8 @@ export async function deactivateVenue(actor: Actor, id: string, body: { cancelUp
     }
     const { localNow } = await loadCampus(tx);
     const upcoming = (
-      await tx.query<{ id: string; status: string }>(
-        `select id, status from public.bookings where venue_id = $1 and status in ('pending','approved')
-           and upper(slot) > $2::timestamp for update`,
+      await tx.query<{ id: string; status: 'confirmed' | 'queued' }>(
+        `select b.id, b.status from public.bookings b where b.venue_id = $1 and ${UPCOMING_SQL('$2::timestamp')} for update`,
         [id, localNow.replace('T', ' ')],
       )
     ).rows;

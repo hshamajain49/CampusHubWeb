@@ -21,7 +21,7 @@ import { useAdminBookings, useAdminVenue, useBlockMutations, useBlocks } from '.
 import { VenueDialogs, type VenueDialog } from './venue-dialogs';
 import { BlockDialog } from '../blocks/block-dialog';
 import { BookingsTable } from '../bookings/bookings-page';
-import { DecisionDialog, type DecisionMode } from '../bookings/decision-dialogs';
+import { CancelBookingDialog } from '../bookings/cancel-booking-dialog';
 import { AdminCalendar } from '../calendar/admin-calendar-page';
 import { useAdminComplaints } from '@/features/complaints/api';
 import { ComplaintsTable } from '@/features/complaints/components/complaints-table';
@@ -175,15 +175,15 @@ function BookingsTab({ venueId }: { venueId: string }) {
   const [sort, setSort] = React.useState('start:desc');
   const [page, setPage] = React.useState(1);
   const list = useAdminBookings({ venueId, sort, page, pageSize: 20 });
-  const [decision, setDecision] = React.useState<{ b: AdminBookingListItem; mode: DecisionMode } | null>(null);
+  const [cancelling, setCancelling] = React.useState<AdminBookingListItem | null>(null);
   if (list.isLoading) return <Skeleton className="h-60" />;
   if (list.isError) return <ErrorState compact onRetry={() => list.refetch()} />;
   if (!list.data!.data.length) return <div className="card"><EmptyState compact icon={CalendarClock} title="No bookings for this venue yet." /></div>;
   return (
     <>
-      <BookingsTable rows={list.data!.data} sort={sort} onSort={setSort} hideVenue onDecide={(b, mode) => setDecision({ b, mode })} />
+      <BookingsTable rows={list.data!.data} sort={sort} onSort={setSort} hideVenue onCancel={setCancelling} />
       <Pagination page={page} pageSize={20} total={list.data!.meta.total} onPage={setPage} />
-      <DecisionDialog booking={decision?.b ?? null} mode={decision?.mode ?? null} onClose={() => setDecision(null)} />
+      <CancelBookingDialog booking={cancelling} onClose={() => setCancelling(null)} onDone={() => setCancelling(null)} />
     </>
   );
 }
@@ -275,8 +275,8 @@ export default function VenueDetailAdminPage() {
         </TabsList>
         <TabsContent value="overview" className="mt-5 grid gap-5 outline-none">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard icon={CalendarClock} tone="approved" label="Upcoming approved" value={v.stats.upcomingApprovedCount} />
-            <StatCard icon={CalendarClock} tone="pending" label="Pending" value={v.stats.pendingCount} />
+            <StatCard icon={CalendarClock} tone="approved" label="Upcoming confirmed" value={v.stats.upcomingConfirmedCount} />
+            <StatCard icon={CalendarClock} tone="pending" label="In queue" value={v.stats.queuedCount} />
             <StatCard icon={CalendarClock} tone="neutral" label="Total bookings" value={v.stats.totalBookings} />
             <StatCard icon={CalendarClock} tone="teal" label="Next booking" value={next ? formatDate(next.date) : '—'} detail={next ? formatTimeRange(next.startTime, next.endTime) : 'Nothing scheduled'} />
           </div>

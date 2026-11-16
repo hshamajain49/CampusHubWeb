@@ -107,8 +107,8 @@ export function BlockDialog({
       const res = block ? await m.update.mutateAsync({ id: block.id, body }) : await m.create.mutateAsync({ ...body, venueId });
       const a = res.affectedBookings;
       toast.success(
-        a.rejected + a.cancelled > 0
-          ? `Block saved. ${a.rejected + a.cancelled} booking${a.rejected + a.cancelled === 1 ? ' was' : 's were'} cancelled or rejected.`
+        a.cancelled > 0
+          ? `Block saved. ${a.cancelled} booking${a.cancelled === 1 ? ' was' : 's were'} cancelled, and any freed time went to the queue.`
           : block
             ? 'Block updated.'
             : 'Block created.',
@@ -136,7 +136,7 @@ export function BlockDialog({
                 {conflicts.length} booking{conflicts.length === 1 ? '' : 's'} overlap this block
               </DialogTitle>
               <DialogDescription>
-                Blocking will reject pending requests and cancel approved bookings with the reason “Venue unavailable: {BLOCK_TYPE_LABELS[type]} — {reason.trim()}”.
+                Blocking will cancel these confirmed bookings and queued requests with the reason “Venue unavailable: {BLOCK_TYPE_LABELS[type]} — {reason.trim()}”. Any of their time outside the block goes to the queue.
               </DialogDescription>
             </DialogHeader>
             <ul className="grid max-h-64 gap-2 overflow-y-auto">

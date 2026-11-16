@@ -6,27 +6,34 @@ import { minutesUntil } from './booking-rules.js';
 interface PermInput {
   status: BookingStatus;
   start: string; // LocalDateTime
+  end: string; // LocalDateTime
   venueActive: boolean;
   requesterActive?: boolean;
 }
 
+/**
+ * A booking can be cancelled at any time until it ends (docs/BOOKINGS.md): a queued request until its start (when the
+ * job expires it), a confirmed booking until its end.
+ */
+export function canCancelBooking(b: Pick<PermInput, 'status' | 'start' | 'end'>, localNow: string): boolean {
+  if (b.status === 'queued') return minutesUntil(b.start, localNow) > 0;
+  return b.status === 'confirmed' && minutesUntil(b.end, localNow) > 0;
+}
+
 export function memberPermissions(b: PermInput, s: AppSettings, localNow: string): BookingPermissions {
   const until = minutesUntil(b.start, localNow);
-  const active = b.status === 'pending' || b.status === 'approved';
+  const active = b.status === 'confirmed' || b.status === 'queued';
   return {
     canEdit: active && b.venueActive && until > s.modificationCutoffMinutes,
-    canCancel: (b.status === 'pending' && until > 0) || (b.status === 'approved' && until > s.cancellationCutoffMinutes),
-    canDownloadConfirmation: b.status === 'approved',
+    canCancel: canCancelBooking(b, localNow),
+    canDownloadConfirmation: b.status === 'confirmed' || b.status === 'completed',
     canRebook: b.venueActive,
   };
 }
 
 export function adminPermissions(b: PermInput, localNow: string): AdminBookingPermissions {
-  const future = minutesUntil(b.start, localNow) > 0;
   return {
-    canApprove: b.status === 'pending' && future && b.venueActive && b.requesterActive !== false,
-    canReject: b.status === 'pending',
-    canCancel: b.status === 'approved' && future,
-    canDownloadConfirmation: b.status === 'approved',
+    canCancel: canCancelBooking(b, localNow),
+    canDownloadConfirmation: b.status === 'confirmed' || b.status === 'completed',
   };
 }

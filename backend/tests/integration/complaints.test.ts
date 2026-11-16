@@ -485,7 +485,7 @@ describe('C15–C29 administration', () => {
   it('CBT-17: department staff can use the booking endpoints like any member', async () => {
     const v = await createVenue('Staff Hall');
     const { rows } = await pool.query(`select to_char((now() at time zone 'UTC')::date + 7, 'YYYY-MM-DD') as d`);
-    const res = await as(elec.token).post('/bookings', { venueId: v, date: rows[0].d, startTime: '10:00', endTime: '11:00', purpose: 'Electrical safety briefing' });
+    const res = await as(elec.token).post('/bookings', { venueId: v, date: rows[0].d, startTime: '10:00', endTime: '11:00', purpose: 'Electrical safety briefing', idNumber: 'STF-0042' });
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect((await as(elec.token).get('/me/dashboard')).status).toBe(200);
     expect((await as(elec.token).get('/venues')).status).toBe(200);

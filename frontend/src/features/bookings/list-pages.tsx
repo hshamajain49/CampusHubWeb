@@ -59,7 +59,7 @@ export function MyBookingsPage() {
   useDocumentTitle('My bookings');
   const [params, setParams] = useSearchParams();
   const now = useCampusNow();
-  const status = (params.get('status') as 'pending' | 'approved' | null) ?? 'all';
+  const status = (params.get('status') as 'confirmed' | 'queued' | null) ?? 'all';
   const page = Number(params.get('page') || 1);
   const q = useMyBookings({ scope: 'upcoming', sort: 'start:asc', status: status === 'all' ? undefined : [status], page, pageSize: 20 });
 
@@ -78,7 +78,7 @@ export function MyBookingsPage() {
     <div>
       <PageHeader
         title="My bookings"
-        description="Requests waiting for a decision and confirmed bookings that haven't ended yet."
+        description="Confirmed bookings that haven't ended yet, and requests waiting in a queue."
         actions={
           <Button asChild>
             <Link to="/venues">
@@ -95,8 +95,8 @@ export function MyBookingsPage() {
         onChange={(v) => setParams(v === 'all' ? {} : { status: v }, { replace: true })}
         options={[
           { value: 'all', label: 'All' },
-          { value: 'pending', label: 'Pending' },
-          { value: 'approved', label: 'Approved' },
+          { value: 'confirmed', label: 'Confirmed' },
+          { value: 'queued', label: 'In queue' },
         ]}
       />
       {q.isLoading ? (
@@ -140,14 +140,13 @@ export function MyBookingsPage() {
 }
 
 const HISTORY_STATUSES: { value: BookingStatus; label: string }[] = [
-  { value: 'approved', label: 'Approved (past)' },
-  { value: 'rejected', label: 'Rejected' },
+  { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
   { value: 'expired', label: 'Expired' },
 ];
 
 function reasonOf(b: BookingSummary) {
-  return b.status === 'rejected' ? b.rejectionReason : b.status === 'cancelled' ? b.cancellationReason : null;
+  return b.status === 'cancelled' ? b.cancellationReason : null;
 }
 
 function RowMenu({ b }: { b: BookingSummary }) {
@@ -275,7 +274,6 @@ export function BookingHistoryPage() {
                         Reason: {reasonOf(b)}
                       </span>
                     )}
-                    {b.status === 'approved' && <span className="mt-1 block text-[12px] text-muted">Completed</span>}
                   </TD>
                   <TD className="whitespace-nowrap text-[13px] text-muted">{timeAgo(b.updatedAt)}</TD>
                   <TD>

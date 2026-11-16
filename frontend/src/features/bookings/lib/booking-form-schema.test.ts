@@ -11,12 +11,11 @@ const rules: BookingRules = {
   maxDurationMinutes: 480,
   maxAdvanceDays: 90,
   minLeadTimeMinutes: 60,
-  cancellationCutoffMinutes: 60,
   modificationCutoffMinutes: 120,
-  maxPendingPerUser: 5,
+  maxActivePerUser: 5,
 };
 const now = '2026-11-09T09:00:00';
-const base = { venueId: 'v1', date: '2026-11-12', startTime: '10:00', endTime: '12:00', purpose: 'Robotics club meet', expectedAttendees: 40 };
+const base = { venueId: 'v1', date: '2026-11-12', startTime: '10:00', endTime: '12:00', purpose: 'Robotics club meet', expectedAttendees: 40, idNumber: '1RV22CS045' };
 
 function errors(values: Partial<typeof base> & Record<string, unknown>, capacity = 60) {
   const r = buildBookingFormSchema(rules, capacity, now, 'Seminar Hall A').safeParse({ ...base, ...values });
@@ -50,6 +49,14 @@ describe('booking form schema', () => {
   it('refuses starts inside the lead time and beyond the advance window', () => {
     expect(errors({ date: '2026-11-09', startTime: '09:30', endTime: '10:30' }).startTime).toMatch(/at least 1 h|at least 1 hour/);
     expect(errors({ date: '2027-03-01' }).date).toBe('You can book up to 90 days ahead.');
+  });
+
+  it('requires a USN / faculty ID and upper-cases it', () => {
+    expect(errors({ idNumber: '  ' }).idNumber).toBe('Enter your USN or faculty ID');
+    expect(errors({ idNumber: 'ab' }).idNumber).toMatch(/3–30 letters or digits/);
+    expect(errors({ idNumber: 'has space' }).idNumber).toMatch(/3–30 letters or digits/);
+    const r = buildBookingFormSchema(rules, 60, now).safeParse({ ...base, idNumber: ' fac-1024 ' });
+    expect(r.success && r.data.idNumber).toBe('FAC-1024');
   });
 
   it('caps attendees at the venue capacity', () => {

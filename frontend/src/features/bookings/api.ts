@@ -32,7 +32,8 @@ export function useBooking(id: string | undefined) {
     queryFn: () => apiFetch<Booking>(`/bookings/${id}`),
     enabled: !!id,
     staleTime: 15_000,
-    refetchInterval: (q) => (q.state.data?.status === 'pending' ? interval : false),
+    // A queued request can be promoted at any moment: keep it fresh.
+    refetchInterval: (q) => (q.state.data?.status === 'queued' ? interval : false),
     refetchIntervalInBackground: false,
   });
 }
@@ -69,9 +70,12 @@ export interface CreateBookingInput {
   endTime: string;
   purpose: string;
   expectedAttendees: number | null;
+  /** USN / faculty ID (required by the API). */
+  idNumber: string;
 }
 
 export function useCreateBooking() {
+  const qc = useQueryClient();
   const invalidate = useInvalidateBookings();
   return useMutation({
     mutationFn: async ({ input, idempotencyKey }: { input: CreateBookingInput; idempotencyKey: string }) => {
@@ -82,7 +86,11 @@ export function useCreateBooking() {
       });
       return data;
     },
-    onSuccess: (b) => invalidate(b),
+    onSuccess: (b) => {
+      invalidate(b);
+      // /me carries the last-used USN / faculty ID that pre-fills the next booking form.
+      void qc.invalidateQueries({ queryKey: ['me'] });
+    },
   });
 }
 

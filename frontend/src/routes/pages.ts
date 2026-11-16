@@ -28,7 +28,6 @@ export const authPages = {
 
 export const adminPages = {
   dashboard: () => import('@/features/admin/dashboard/admin-dashboard-page'),
-  approvals: () => import('@/features/admin/approvals/approvals-page'),
   bookings: () => import('@/features/admin/bookings/bookings-page'),
   bookingDetail: () => import('@/features/admin/bookings/admin-booking-detail-page'),
   calendar: () => import('@/features/admin/calendar/admin-calendar-page'),

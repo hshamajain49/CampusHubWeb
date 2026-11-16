@@ -39,12 +39,6 @@ export function minutesUntil(ldt: string, localNow: string): number {
   return localDateTimeToMinutes(ldt) - localDateTimeToMinutes(localNow);
 }
 
-export function cancellationClosedMessage(cutoff: number): string {
-  return cutoff === 0
-    ? "Bookings can't be cancelled after they have started."
-    : `Bookings can't be cancelled less than ${formatDuration(cutoff)} before the start.`;
-}
-
 export function modificationClosedMessage(cutoff: number): string {
   return cutoff === 0
     ? "Bookings can't be changed after they have started."

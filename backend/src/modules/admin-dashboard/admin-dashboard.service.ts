@@ -13,26 +13,25 @@ export async function adminDashboard(): Promise<AdminDashboard> {
   const campus = await loadCampus(pool);
   const now = campus.localNow.replace('T', ' ');
   const today = campus.today;
-  const [kpi, attention, schedule, blocks, activity, cKpis, reassign] = await Promise.all([
+  const [kpi, queued, schedule, blocks, activity, cKpis, reassign] = await Promise.all([
     pool.query(
       `select
-         (select count(*) from public.bookings where status = 'pending' and (booking_date + start_time) > $1::timestamp) as pending,
-         (select min(created_at) from public.bookings where status = 'pending' and (booking_date + start_time) > $1::timestamp) as oldest,
-         (select count(*) from public.bookings where status = 'approved' and booking_date = $2::date) as today_approved,
-         (select count(*) from public.bookings where status = 'approved' and booking_date between $2::date and $3::date) as next7,
+         (select count(*) from public.bookings where status = 'queued' and (booking_date + start_time) > $1::timestamp) as queued,
+         (select count(*) from public.bookings where status in ('confirmed','completed') and booking_date = $2::date) as today_confirmed,
+         (select count(*) from public.bookings where status in ('confirmed','completed') and booking_date between $2::date and $3::date) as next7,
          (select count(*) from public.venues where is_active) as active_venues,
          (select count(*) from public.venues where not is_active) as inactive_venues,
          (select count(*) from public.profiles where is_active and role in ('student','faculty_staff','department_staff')) as active_members,
-         (select count(*) filter (where status = 'approved') from public.bookings where decided_at > now() - interval '30 days') as approved30,
-         (select count(*) filter (where status = 'rejected') from public.bookings where decided_at > now() - interval '30 days') as rejected30`,
+         (select count(*) from public.bookings where created_at > now() - interval '30 days') as new30,
+         (select count(*) from public.booking_history where event_type = 'promoted' and created_at > now() - interval '30 days') as promoted30`,
       [now, today, addDays(today, 6)],
     ),
     pool.query(
-      `${BOOKING_SELECT} where b.status = 'pending' and (b.booking_date + b.start_time) > $1::timestamp
-        order by b.booking_date, b.start_time limit 5`,
+      `${BOOKING_SELECT} where b.status = 'queued' and (b.booking_date + b.start_time) > $1::timestamp
+        order by b.booking_date, b.start_time, b.queued_at limit 5`,
       [now],
     ),
-    pool.query(`${BOOKING_SELECT} where b.status = 'approved' and b.booking_date = $1::date order by b.start_time`, [today]),
+    pool.query(`${BOOKING_SELECT} where b.status in ('confirmed','completed') and b.booking_date = $1::date order by b.start_time`, [today]),
     pool.query(
       `select vb.*, vb.starts_at::text as s, vb.ends_at::text as e, v.name as venue_name, p.full_name as created_by_name
          from public.venue_blocks vb join public.venues v on v.id = vb.venue_id join public.profiles p on p.id = vb.created_by
@@ -52,21 +51,20 @@ export async function adminDashboard(): Promise<AdminDashboard> {
     complaintsNeedingReassignment(5),
   ]);
   const k = kpi.rows[0];
-  const decided = k.approved30 + k.rejected30;
   return {
     kpis: {
-      pendingCount: k.pending,
-      oldestPendingSubmittedAt: k.oldest ? new Date(k.oldest).toISOString() : null,
-      todayApprovedCount: k.today_approved,
-      next7DaysApprovedCount: k.next7,
+      queuedCount: k.queued,
+      todayConfirmedCount: k.today_confirmed,
+      next7DaysConfirmedCount: k.next7,
       activeVenues: k.active_venues,
       inactiveVenues: k.inactive_venues,
       activeMembers: k.active_members,
-      approvalRate30d: decided ? Math.round((k.approved30 / decided) * 1000) / 1000 : 0,
+      newBookings30d: k.new30,
+      promoted30d: k.promoted30,
     },
     complaintKpis: cKpis,
     complaintsNeedingReassignment: reassign,
-    needsAttention: attention.rows.map((r) => toAdminListItem(r, campus.localNow)),
+    queuedRequests: queued.rows.map((r) => toAdminListItem(r, campus.localNow)),
     todaySchedule: schedule.rows.map((r) => toAdminListItem(r, campus.localNow)),
     upcomingBlocks: blocks.rows.map(toVenueBlock),
     recentActivity: activity.rows.map((r) => ({

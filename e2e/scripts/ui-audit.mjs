@@ -196,7 +196,7 @@ const ad = await token(who.admin.email, who.admin.password);
 const venues = await api(st, '/venues?pageSize=50');
 const venue = venues.find((v) => v.name === 'Seminar Hall A') ?? venues[0];
 const myBookings = await api(st, '/bookings?scope=all&pageSize=50');
-const bk = myBookings.find((b) => b.status === 'approved') ?? myBookings[0];
+const bk = myBookings.find((b) => b.status === 'confirmed') ?? myBookings[0];
 const editable = myBookings.find((b) => b.permissions.canEdit) ?? bk;
 const myC = await api(st, '/complaints?tab=all&pageSize=50');
 const cAwait = myC.find((c) => c.status === 'awaiting_confirmation') ?? myC[0];
@@ -204,7 +204,7 @@ const cPhotos = myC.find((c) => c.photoCount > 0) ?? myC[0];
 const staffC = await api(sf, '/staff/complaints?tab=all&pageSize=50');
 const sC = staffC.find((c) => c.photoCount > 0) ?? staffC[0];
 const adBookings = await api(ad, '/admin/bookings?pageSize=50');
-const adBk = adBookings.find((b) => b.status === 'pending') ?? adBookings[0];
+const adBk = adBookings.find((b) => b.status === 'queued') ?? adBookings[0];
 const adC = await api(ad, '/admin/complaints?pageSize=50');
 const adCr = adC.find((c) => c.reassignmentRequested) ?? adC[0];
 const users = await api(ad, '/admin/users?pageSize=50');
@@ -228,7 +228,7 @@ const ROUTES = {
     ['staff-detail', `/staff/complaints/${sC.id}`], ['staff-member-dash', '/dashboard'],
   ],
   admin: [
-    ['dash', '/admin/dashboard'], ['approvals', '/admin/approvals'], ['bookings', '/admin/bookings'], ['booking', `/admin/bookings/${adBk.id}`],
+    ['dash', '/admin/dashboard'], ['bookings-queued', '/admin/bookings?status=queued'], ['bookings', '/admin/bookings'], ['booking', `/admin/bookings/${adBk.id}`],
     ['calendar', '/admin/calendar'], ['venues', '/admin/venues'], ['venue-new', '/admin/venues/new'], ['venue', `/admin/venues/${venue.id}`],
     ['venue-issues', `/admin/venues/${venue.id}?tab=issues`], ['venue-edit', `/admin/venues/${venue.id}/edit`],
     ['users', '/admin/users'], ['user-new', '/admin/users/new'], ['user', `/admin/users/${user.id}`],

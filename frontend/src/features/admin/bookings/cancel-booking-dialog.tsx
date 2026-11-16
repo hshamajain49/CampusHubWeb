@@ -1,3 +1,5 @@
+// Admin cancel (E23). Bookings need no approval (docs/BOOKINGS.md): cancelling is the one admin action, and a freed
+// slot goes to the next request in the queue automatically.
 import * as React from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -8,10 +10,8 @@ import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { Field } from '@/components/common/form-field';
-import { RoleBadge } from '@/components/common/badges';
-import { invalidateBookingViews, useDecision } from '../api';
-
-export type DecisionMode = 'approve' | 'reject' | 'cancel';
+import { RoleBadge, StatusBadge } from '@/components/common/badges';
+import { invalidateBookingViews, useAdminCancel } from '../api';
 
 export function StartsInChip({ date, today, className }: { date: string; today?: string; className?: string }) {
   if (!today) return null;
@@ -35,18 +35,20 @@ function Summary({ b }: { b: AdminBookingListItem }) {
     ['Venue', b.venue.name],
     ['When', `${formatLongDate(b.date)} · ${formatTimeRange(b.startTime, b.endTime)} (${formatDuration(b.durationMinutes)})`],
     ['Attendees', b.expectedAttendees ? `${formatNumber(b.expectedAttendees)} of ${formatNumber(b.venue.capacity)}` : `Not specified (capacity ${formatNumber(b.venue.capacity)})`],
+    ...(b.idNumber ? [['ID', b.idNumber]] : []),
   ];
   return (
     <div className="rounded-[12px] bg-surface-muted p-3.5">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold text-ink">{b.requester.fullName}</span>
         <RoleBadge role={b.requester.role} />
+        <StatusBadge status={b.status} queuePosition={b.queuePosition} size="sm" />
       </div>
       <dl className="grid gap-1 text-[13px]">
         {rows.map(([k, v]) => (
           <div key={k} className="grid grid-cols-[80px_minmax(0,1fr)] gap-2">
             <dt className="text-muted">{k}</dt>
-            <dd className="tabular text-ink">{v}</dd>
+            <dd className="tabular break-words text-ink">{v}</dd>
           </div>
         ))}
       </dl>
@@ -58,79 +60,69 @@ function Summary({ b }: { b: AdminBookingListItem }) {
 const RACE_MESSAGES: Record<string, (e: ApiError) => string> = {
   INVALID_STATUS_TRANSITION: (e) => e.message,
   BOOKING_CHANGED: () => 'The requester changed this booking. Review the updated details.',
-  BOOKING_IN_PAST: () => "This request's start time has passed; it can only be rejected.",
-  VENUE_INACTIVE: () => 'The venue is inactive. Reactivate it before approving.',
-  REQUESTER_INACTIVE: () => "The requester's account is deactivated.",
+  CANCELLATION_WINDOW_CLOSED: (e) => e.message,
 };
 
-export function DecisionDialog({
+/** Opens while `booking` is set. */
+export function CancelBookingDialog({
   booking,
-  mode,
   onClose,
   onDone,
 }: {
   booking: AdminBookingListItem | null;
-  mode: DecisionMode | null;
   onClose: () => void;
-  onDone?: (mode: DecisionMode) => void;
+  onDone?: () => void;
 }) {
   const [text, setText] = React.useState('');
   const [touched, setTouched] = React.useState(false);
   const qc = useQueryClient();
-  const d = useDecision();
+  const cancel = useAdminCancel();
   React.useEffect(() => {
     setText('');
     setTouched(false);
-  }, [booking?.id, mode]);
-  if (!booking || !mode) return null;
+  }, [booking?.id]);
+  if (!booking) return null;
 
-  const reasonRequired = mode !== 'approve';
-  const reasonError = reasonRequired && touched && text.trim().length < 3 ? 'Please provide a reason' : undefined;
+  const queued = booking.status === 'queued';
+  const reasonError = touched && text.trim().length < 3 ? 'Please provide a reason' : undefined;
 
   const confirm = async () => {
-    if (reasonRequired && text.trim().length < 3) {
+    if (text.trim().length < 3) {
       setTouched(true);
       throw new Error('Please provide a reason');
     }
     try {
-      if (mode === 'approve') await d.approve.mutateAsync({ id: booking.id, body: { version: booking.version, ...(text.trim() ? { note: text.trim() } : {}) } });
-      if (mode === 'reject') await d.reject.mutateAsync({ id: booking.id, body: { version: booking.version, reason: text.trim() } });
-      if (mode === 'cancel') await d.cancel.mutateAsync({ id: booking.id, body: { version: booking.version, reason: text.trim() } });
-      toast.success(mode === 'approve' ? 'Booking approved.' : mode === 'reject' ? 'Booking rejected.' : 'Booking cancelled.');
-      onDone?.(mode);
+      await cancel.mutateAsync({ id: booking.id, body: { version: booking.version, reason: text.trim() } });
+      toast.success(queued ? 'Queued request cancelled.' : 'Booking cancelled. The slot went to the next request in the queue, if any.');
+      onDone?.();
     } catch (e) {
       if (e instanceof ApiError && RACE_MESSAGES[e.code]) {
         toast.error(RACE_MESSAGES[e.code]!(e));
         invalidateBookingViews(qc, booking);
-        return; // close: the queue refreshes with the current state
+        return; // close: the list refreshes with the current state
       }
       throw e;
     }
   };
 
-  const common = { open: true, onOpenChange: (o: boolean) => !o && onClose(), onConfirm: confirm, size: 'lg' as const };
-
-  if (mode === 'approve') {
-    return (
-      <ConfirmDialog {...common} title={`Approve booking ${booking.reference}?`} confirmLabel="Approve">
-        <Summary b={booking} />
-        <Field label="Note to requester" optional hint={`Shown on their booking page and timeline · ${text.length}/500`}>
-          {(p) => <Textarea {...p} rows={3} maxLength={500} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Please collect the keys from the admin office." />}
-        </Field>
-      </ConfirmDialog>
-    );
-  }
   return (
     <ConfirmDialog
-      {...common}
+      open
+      onOpenChange={(o) => !o && onClose()}
+      onConfirm={confirm}
+      size="lg"
       destructive
-      title={mode === 'reject' ? 'Reject booking' : 'Cancel this approved booking?'}
-      description={`${booking.requester.fullName} will see this reason.`}
-      confirmLabel={mode === 'reject' ? 'Reject' : 'Cancel booking'}
-      cancelLabel={mode === 'reject' ? 'Cancel' : 'Keep booking'}
+      title={queued ? 'Cancel this queued request?' : 'Cancel this booking?'}
+      description={
+        queued
+          ? `${booking.requester.fullName} leaves the queue and will see this reason.`
+          : `${booking.requester.fullName} will see this reason. If anyone queued for this time, the first in line gets the slot automatically.`
+      }
+      confirmLabel={queued ? 'Cancel request' : 'Cancel booking'}
+      cancelLabel="Keep it"
     >
       <Summary b={booking} />
-      <Field label={mode === 'reject' ? 'Reason for rejection (required)' : 'Reason (required)'} error={reasonError} hint={`${text.length}/500`}>
+      <Field label="Reason (required)" error={reasonError} hint={`${text.length}/500`}>
         {(p) => (
           <Textarea
             {...p}
@@ -139,7 +131,7 @@ export function DecisionDialog({
             value={text}
             onBlur={() => setTouched(true)}
             onChange={(e) => setText(e.target.value)}
-            placeholder={mode === 'reject' ? 'e.g. The hall is reserved for examinations that week.' : 'e.g. Emergency maintenance in the hall.'}
+            placeholder="e.g. Emergency maintenance in the hall."
           />
         )}
       </Field>

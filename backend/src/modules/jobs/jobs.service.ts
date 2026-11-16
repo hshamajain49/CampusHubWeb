@@ -1,4 +1,4 @@
-// Scheduled jobs (§10.15 K, §10.20): expire, reminders, delivery retries, housekeeping. Single-flight per process.
+// Scheduled jobs (§10.15 K, §10.20): settle bookings, reminders, delivery retries, housekeeping. Single-flight per process.
 import { pool } from '../../db/pool.js';
 import { withTransaction } from '../../db/transaction.js';
 import { logger } from '../../lib/logger.js';
@@ -10,13 +10,17 @@ let running = false;
 let lastHousekeepingDay: string | null = null;
 let lastExpiryAt = 0;
 
-/** K1: pending → expired when the start passes; notifies requesters. */
+/**
+ * K1 (task 'expire', name kept for existing cron configs): queued requests whose start passed → expired (requester is
+ * notified the slot never freed up); confirmed bookings that ended → completed. Returns the number of expired requests.
+ */
 export async function runExpiry(): Promise<number> {
   lastExpiryAt = Date.now();
   return withTransaction({ actorId: null }, async (tx) => {
-    const { rows } = await tx.query<{ booking_id: string }>('select booking_id from public.expire_stale_bookings()');
-    for (const r of rows) await publish(tx, { type: 'booking.expired', bookingId: r.booking_id, actorId: null });
-    return rows.length;
+    const { rows } = await tx.query<{ booking_id: string; new_status: string }>('select booking_id, new_status from public.settle_bookings()');
+    const expired = rows.filter((r) => r.new_status === 'expired');
+    for (const r of expired) await publish(tx, { type: 'booking.expired', bookingId: r.booking_id, actorId: null });
+    return expired.length;
   });
 }
 
@@ -45,7 +49,7 @@ async function runReminders(): Promise<number> {
     if (settings.reminderLeadMinutes <= 0) return 0;
     const { rows } = await tx.query<{ id: string }>(
       `select b.id from public.bookings b
-        where b.status = 'approved'
+        where b.status = 'confirmed'
           and (b.booking_date + b.start_time) > $1::timestamp
           and (b.booking_date + b.start_time) <= $1::timestamp + make_interval(mins => $2)
           and not exists (select 1 from public.booking_reminders r where r.booking_id = b.id)

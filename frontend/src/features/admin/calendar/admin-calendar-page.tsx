@@ -2,9 +2,9 @@ import * as React from 'react';
 import { Link } from 'react-router';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { Check, Construction, ExternalLink, Pencil, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Ban, Construction, ExternalLink, Pencil, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { EventInput } from '@fullcalendar/core';
-import { BLOCK_TYPE_LABELS, type AdminBookingListItem, type CalendarEvent, type VenueBlock } from '@campushub/shared';
+import { BLOCK_TYPE_LABELS, type CalendarEvent, type VenueBlock } from '@campushub/shared';
 import { cn } from '@/lib/utils';
 import { formatShortDay } from '@/lib/format';
 import { venuePalette } from '@/lib/venue-palette';
@@ -19,7 +19,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { RoleBadge, StatusBadge } from '@/components/common/badges';
 import { BookingCalendar, type CalendarView } from '@/features/calendar/booking-calendar';
 import { useAdminBooking, useAllVenueOptions, useBlockMutations, useCalendar } from '../api';
-import { DecisionDialog, type DecisionMode } from '../bookings/decision-dialogs';
+import { CancelBookingDialog } from '../bookings/cancel-booking-dialog';
 import { BlockDialog, type BlockDialogInitial } from '../blocks/block-dialog';
 
 function toEvents(events: CalendarEvent[], allVenues: boolean): EventInput[] {
@@ -36,7 +36,8 @@ function toEvents(events: CalendarEvent[], allVenues: boolean): EventInput[] {
       return {
         ...base,
         title: allVenues ? e.title : e.requester.fullName,
-        classNames: [e.status === 'approved' ? 'ev-approved' : 'ev-pending', allVenues ? 'border-l-4' : ''],
+        // Confirmed and completed bookings hold the time; queued requests are drawn as "waiting" (hatched).
+        classNames: [e.status === 'queued' ? 'ev-pending' : 'ev-approved', allVenues ? 'border-l-4' : ''],
       };
     return { ...base, title: allVenues ? e.title : `${BLOCK_TYPE_LABELS[e.blockType]}: ${e.reason}`, classNames: ['ev-block', allVenues ? 'border-l-4' : ''] };
   });
@@ -48,17 +49,24 @@ export function AdminCalendar({ lockedVenueId }: { lockedVenueId?: string }) {
   const { data: settings } = usePublicSettings();
   const venues = useAllVenueOptions();
   const [venueId, setVenueId] = React.useState(lockedVenueId ?? '');
-  const [statuses, setStatuses] = React.useState<string[]>(['approved', 'pending']);
+  // UI toggles; "confirmed" also shows completed bookings (same booking, after it ended).
+  const [statuses, setStatuses] = React.useState<string[]>(['confirmed']);
   const [includeBlocks, setIncludeBlocks] = React.useState(true);
   const [range, setRange] = React.useState<{ from: string; to: string; view: CalendarView } | null>(null);
   const [selected, setSelected] = React.useState<CalendarEvent | null>(null);
-  const [decision, setDecision] = React.useState<{ b: AdminBookingListItem; mode: DecisionMode } | null>(null);
+  const [cancelling, setCancelling] = React.useState(false);
   const [blockDialog, setBlockDialog] = React.useState<{ block?: VenueBlock | null; initial?: BlockDialogInitial } | null>(null);
   const [deleteBlock, setDeleteBlock] = React.useState<CalendarEvent | null>(null);
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const blocksM = useBlockMutations();
 
-  const cal = useCalendar({ from: range?.from, to: range?.to, venueId: venueId || undefined, statuses, includeBlocks });
+  const cal = useCalendar({
+    from: range?.from,
+    to: range?.to,
+    venueId: venueId || undefined,
+    statuses: statuses.flatMap((s) => (s === 'confirmed' ? ['confirmed', 'completed'] : [s])),
+    includeBlocks,
+  });
   const events = React.useMemo(() => toEvents(cal.data?.events ?? [], !venueId), [cal.data, venueId]);
   const selectedBooking = useAdminBooking(selected?.kind === 'booking' ? selected.bookingId : undefined);
   const rules = settings?.bookingRules;
@@ -66,8 +74,8 @@ export function AdminCalendar({ lockedVenueId }: { lockedVenueId?: string }) {
   const toggles = (
     <div className="flex flex-wrap items-center gap-2">
       {[
-        ['approved', 'Approved', 'bg-secondary'],
-        ['pending', 'Pending', 'slot-hold'],
+        ['confirmed', 'Confirmed', 'bg-secondary'],
+        ['queued', 'In queue', 'slot-hold'],
       ].map(([key, label, swatch]) => (
         <label key={key} className="chip flex h-8 cursor-pointer items-center gap-2 rounded-full border border-border bg-surface px-3 text-[12.5px] font-semibold text-ink">
           <Checkbox checked={statuses.includes(key!)} onCheckedChange={(c) => setStatuses((s) => (c ? [...s, key!] : s.filter((x) => x !== key)))} />
@@ -158,7 +166,7 @@ export function AdminCalendar({ lockedVenueId }: { lockedVenueId?: string }) {
               {selected.kind === 'booking' ? (
                 <>
                   <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge status={selected.status} />
+                    <StatusBadge status={selectedBooking.data?.status ?? selected.status} queuePosition={selectedBooking.data?.queuePosition} />
                     <span className="font-mono text-[12.5px] text-muted">{selected.reference}</span>
                   </div>
                   <div>
@@ -166,15 +174,10 @@ export function AdminCalendar({ lockedVenueId }: { lockedVenueId?: string }) {
                     <RoleBadge role={selected.requester.role} className="mt-1" />
                   </div>
                   <p className="whitespace-pre-line text-sm text-ink">{selected.purpose}</p>
-                  {selected.status === 'pending' && selectedBooking.data && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button disabled={!selectedBooking.data.permissions.canApprove} onClick={() => setDecision({ b: selectedBooking.data!, mode: 'approve' })}>
-                        <Check /> Approve
-                      </Button>
-                      <Button variant="destructive-outline" onClick={() => setDecision({ b: selectedBooking.data!, mode: 'reject' })}>
-                        <X /> Reject
-                      </Button>
-                    </div>
+                  {selectedBooking.data?.permissions.canCancel && (
+                    <Button variant="destructive-outline" onClick={() => setCancelling(true)}>
+                      <Ban /> {selectedBooking.data.status === 'queued' ? 'Cancel request' : 'Cancel booking'}
+                    </Button>
                   )}
                   <Button variant="outline" asChild>
                     <Link to={`/admin/bookings/${selected.bookingId}`}>
@@ -220,11 +223,13 @@ export function AdminCalendar({ lockedVenueId }: { lockedVenueId?: string }) {
         </SheetContent>
       </Sheet>
 
-      <DecisionDialog
-        booking={decision?.b ?? null}
-        mode={decision?.mode ?? null}
-        onClose={() => setDecision(null)}
-        onDone={() => setSelected(null)}
+      <CancelBookingDialog
+        booking={cancelling ? (selectedBooking.data ?? null) : null}
+        onClose={() => setCancelling(false)}
+        onDone={() => {
+          setCancelling(false);
+          setSelected(null);
+        }}
       />
       <BlockDialog
         open={!!blockDialog}

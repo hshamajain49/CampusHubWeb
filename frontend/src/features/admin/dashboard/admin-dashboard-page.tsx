@@ -10,38 +10,41 @@ import {
   CircleSlash,
   Construction,
   Flag,
-  Hourglass,
   Inbox,
+  ListOrdered,
   Megaphone,
   PartyPopper,
   ThumbsUp,
   Timer,
   Users,
-  X,
 } from 'lucide-react';
-import { BLOCK_TYPE_LABELS, type AdminBookingListItem, type HistoryEvent } from '@campushub/shared';
-import { formatDate, formatLongDate, formatPercent, formatShortDay, formatTimeRange, timeAgo } from '@/lib/format';
+import { BLOCK_TYPE_LABELS, type HistoryEvent } from '@campushub/shared';
+import { formatDate, formatLongDate, formatShortDay, formatTimeRange, timeAgo } from '@/lib/format';
 import { useDocumentTitle } from '@/hooks/misc';
 import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
 import { useMe } from '@/providers/auth-provider';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/controls';
-import { Tooltip } from '@/components/ui/menus';
 import { PageHeader, SectionCard, StatCard, ViewAllLink } from '@/components/common/layout-bits';
 import { EmptyState, ErrorState } from '@/components/common/states';
 import { BookingDateBlock } from '@/components/common/booking-visuals';
 import { UserAvatar } from '@/components/common/small';
 import { useAdminDashboard } from '@/layouts/admin-layout';
-import { DecisionDialog, StartsInChip, type DecisionMode } from '../bookings/decision-dialogs';
+import { StatusBadge } from '@/components/common/badges';
+import { StartsInChip } from '../bookings/cancel-booking-dialog';
 import { CategoryTile } from '@/features/complaints/components/complaint-visuals';
 
 const VERB: Record<HistoryEvent, string> = {
-  submitted: 'submitted',
-  approved: 'approved',
-  rejected: 'rejected',
+  confirmed: 'booked',
+  queued: 'joined the queue with',
+  promoted: 'gave the freed slot to',
+  completed: 'marked as completed',
   cancelled: 'cancelled',
   modified: 'changed',
   expired: 'expired',
+  // history written before approvals were retired
+  submitted: 'submitted',
+  approved: 'approved',
+  rejected: 'rejected',
 };
 
 const BLOCK_ICON = { maintenance: Construction, special_event: PartyPopper, other: CircleSlash } as const;
@@ -52,7 +55,6 @@ export default function AdminDashboardPage() {
   const now = useCampusNow();
   const { data: settings } = usePublicSettings();
   const dash = useAdminDashboard();
-  const [decision, setDecision] = React.useState<{ b: AdminBookingListItem; mode: DecisionMode } | null>(null);
   const today = now?.date;
 
   if (dash.isError && !dash.data) return <ErrorState onRetry={() => dash.refetch()} />;
@@ -72,12 +74,12 @@ export default function AdminDashboardPage() {
           Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-[138px] rounded-[14px]" />)
         ) : (
           <>
-            <StatCard icon={Hourglass} tone="pending" label="Pending requests" value={k.pendingCount} detail={k.oldestPendingSubmittedAt ? `Oldest waiting ${timeAgo(k.oldestPendingSubmittedAt)}` : 'Nothing waiting'} to="/admin/approvals" />
-            <StatCard icon={CalendarCheck} tone="approved" label="Today's bookings" value={k.todayApprovedCount} detail="Approved, today" to={`/admin/bookings?status=approved&dateFrom=${today}&dateTo=${today}`} />
-            <StatCard icon={CalendarRange} tone="teal" label="Next 7 days" value={k.next7DaysApprovedCount} detail="Approved bookings" to={`/admin/bookings?status=approved&dateFrom=${today}`} />
+            <StatCard icon={CalendarCheck} tone="approved" label="Today's bookings" value={k.todayConfirmedCount} detail="Confirmed, today" to={`/admin/bookings?dateFrom=${today}&dateTo=${today}`} />
+            <StatCard icon={CalendarRange} tone="teal" label="Next 7 days" value={k.next7DaysConfirmedCount} detail="Confirmed bookings" to={`/admin/bookings?status=confirmed&dateFrom=${today}`} />
+            <StatCard icon={ListOrdered} tone={k.queuedCount ? 'pending' : 'neutral'} label="In a queue" value={k.queuedCount} detail="Waiting for a slot to free up" to="/admin/bookings?status=queued" />
             <StatCard icon={Building2} tone="primary" label="Active venues" value={k.activeVenues} detail={`${k.inactiveVenues} inactive`} to="/admin/venues" />
             <StatCard icon={Users} tone="violet" label="Active members" value={k.activeMembers} detail="Students, faculty/staff and department staff" to="/admin/users" />
-            <StatCard icon={ChartColumn} tone="neutral" label="Approval rate (30 days)" value={formatPercent(k.approvalRate30d)} detail="Approved ÷ decided" to="/admin/reports" />
+            <StatCard icon={ChartColumn} tone="neutral" label="New bookings (30 days)" value={k.newBookings30d} detail={`${k.promoted30d} got a slot from the queue`} to="/admin/reports" />
           </>
         )}
       </div>
@@ -133,14 +135,15 @@ export default function AdminDashboardPage() {
               </ul>
             </SectionCard>
           )}
-          <SectionCard title="Needs attention" action={<ViewAllLink to="/admin/approvals">View all requests</ViewAllLink>} bodyClassName="px-2 pb-2 md:px-3 md:pb-3">
+          {/* Information only: bookings need no approval, and queued requests are promoted automatically. */}
+          <SectionCard title="Queued requests" action={<ViewAllLink to="/admin/bookings?status=queued">View all</ViewAllLink>} bodyClassName="px-2 pb-2 md:px-3 md:pb-3">
             {!d ? (
               <div className="grid gap-2 p-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-16" />)}</div>
-            ) : d.needsAttention.length === 0 ? (
-              <EmptyState compact icon={Check} tone="teal" title="You're all caught up" message="No pending requests right now." />
+            ) : d.queuedRequests.length === 0 ? (
+              <EmptyState compact icon={Check} tone="teal" title="No one is waiting" message="Every request got its slot. Queued requests appear here." />
             ) : (
               <ul className="grid">
-                {d.needsAttention.map((b) => (
+                {d.queuedRequests.map((b) => (
                   <li key={b.id} className="flex items-center gap-3 rounded-[10px] px-2 py-2.5 hover:bg-surface-muted/70">
                     <BookingDateBlock date={b.date} className="w-12 [&>span:last-child]:text-[18px]" />
                     <Link to={`/admin/bookings/${b.id}`} className="min-w-0 flex-1">
@@ -150,18 +153,7 @@ export default function AdminDashboardPage() {
                       </span>
                       <StartsInChip date={b.date} today={today} className="mt-1" />
                     </Link>
-                    <div className="flex shrink-0 gap-1">
-                      <Tooltip content="Approve">
-                        <Button size="icon-sm" variant="outline" aria-label={`Approve ${b.reference}`} disabled={!b.permissions.canApprove} onClick={() => setDecision({ b, mode: 'approve' })}>
-                          <Check className="size-4 text-success-text" />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip content="Reject">
-                        <Button size="icon-sm" variant="outline" aria-label={`Reject ${b.reference}`} onClick={() => setDecision({ b, mode: 'reject' })}>
-                          <X className="size-4 text-destructive-text" />
-                        </Button>
-                      </Tooltip>
-                    </div>
+                    <StatusBadge status={b.status} queuePosition={b.queuePosition} size="sm" className="shrink-0" />
                   </li>
                 ))}
               </ul>
@@ -257,7 +249,6 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      <DecisionDialog booking={decision?.b ?? null} mode={decision?.mode ?? null} onClose={() => setDecision(null)} />
     </div>
   );
 }

@@ -24,6 +24,7 @@ export function toMe(p: ProfileRow): Me {
     emailNotifications: p.email_notifications,
     createdAt: new Date(p.created_at).toISOString(),
     lastSignInAt: p.last_sign_in_at ? new Date(p.last_sign_in_at).toISOString() : null,
+    lastIdNumber: p.last_id_number ?? null,
   };
 }
 

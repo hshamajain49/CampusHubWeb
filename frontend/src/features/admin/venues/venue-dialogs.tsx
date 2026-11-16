@@ -27,7 +27,7 @@ export function VenueDialogs({ venue, dialog, onClose }: { venue: AdminVenue; di
     setReason('');
     setTyped('');
   }, [dialog]);
-  const upcoming = venue.stats.upcomingApprovedCount + venue.stats.pendingCount;
+  const upcoming = venue.stats.upcomingConfirmedCount + venue.stats.queuedCount;
   const close = (o: boolean) => !o && onClose();
 
   return (
@@ -37,23 +37,23 @@ export function VenueDialogs({ venue, dialog, onClose }: { venue: AdminVenue; di
         onOpenChange={close}
         destructive
         title={`Deactivate ${venue.name}?`}
-        description="Members will no longer see or book this venue. Existing approved bookings remain valid unless you cancel them."
+        description="Members will no longer see or book this venue. Existing confirmed bookings remain valid unless you cancel them; queued requests can't get a slot any more."
         confirmLabel="Deactivate venue"
         confirmDisabled={cancelAll && reason.trim().length < 3}
         onConfirm={async () => {
           const r = await m.deactivate.mutateAsync({ id: venue.id, body: { cancelUpcomingBookings: cancelAll, ...(cancelAll ? { reason: reason.trim() } : {}) } });
-          const n = r.affected.rejected + r.affected.cancelled;
-          toast.success(n ? `Venue deactivated. ${n} booking${n === 1 ? ' was' : 's were'} cancelled or rejected.` : 'Venue deactivated.');
+          const n = r.affected.cancelled;
+          toast.success(n ? `Venue deactivated. ${n} booking${n === 1 ? ' was' : 's were'} cancelled.` : 'Venue deactivated.');
         }}
       >
         {upcoming > 0 && (
           <div className="grid gap-3 rounded-[12px] border border-border p-3.5">
             <p className="tabular text-[13px] font-semibold text-ink">
-              {venue.stats.upcomingApprovedCount} approved and {venue.stats.pendingCount} pending upcoming bookings
+              {venue.stats.upcomingConfirmedCount} confirmed upcoming bookings and {venue.stats.queuedCount} queued requests
             </p>
             <label className="flex items-start gap-2.5 text-[13px] text-ink">
               <Checkbox checked={cancelAll} onCheckedChange={(c) => setCancelAll(!!c)} className="mt-0.5" />
-              Also cancel approved bookings and reject pending requests
+              Also cancel the confirmed bookings and queued requests
             </label>
             {cancelAll && (
               <Field label="Reason (shown to requesters)" error={reason && reason.trim().length < 3 ? 'Reason must be 3–200 characters' : undefined}>

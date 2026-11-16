@@ -1,4 +1,4 @@
-// Reports (E44): aggregate SQL only (§15.4 definitions).
+// Reports (E44): aggregate SQL only. "Booked" = confirmed or completed (the member got the venue).
 import { addDays, diffDays, timeToMinutes, type ReportSummary } from '@campushub/shared';
 import { pool } from '../../db/pool.js';
 import { loadCampus } from '../../domain/settings.js';
@@ -14,23 +14,28 @@ export async function reportSummary(q: { from?: string; to?: string; venueId?: s
   const base = `from public.bookings b where b.booking_date between $1::date and $2::date and ($3::uuid is null or b.venue_id = $3)`;
   const params = [from, to, venue];
 
-  const [totals, byVenue, byRole, byWeekday, byHour, trendSub, trendApp] = await Promise.all([
+  const BOOKED = `b.status in ('confirmed','completed')`;
+  const [totals, byVenue, byRole, byWeekday, byHour, trendSub, trendBooked] = await Promise.all([
     pool.query(
       `select count(*) as requests,
-              count(*) filter (where status = 'pending') as pending,
-              count(*) filter (where status = 'approved') as approved,
-              count(*) filter (where status = 'rejected') as rejected,
-              count(*) filter (where status = 'cancelled') as cancelled,
-              count(*) filter (where status = 'expired') as expired,
-              coalesce(avg(extract(epoch from (decided_at - created_at)) / 3600) filter (where decided_at is not null), 0) as avg_hours,
-              coalesce(sum(extract(epoch from (end_time - start_time)) / 3600) filter (where status = 'approved'), 0) as approved_hours
+              count(*) filter (where ${BOOKED}) as booked,
+              count(*) filter (where b.status = 'confirmed') as confirmed,
+              count(*) filter (where b.status = 'queued') as queued,
+              count(*) filter (where b.status = 'completed') as completed,
+              count(*) filter (where b.status = 'cancelled') as cancelled,
+              count(*) filter (where b.status = 'expired') as expired,
+              count(*) filter (where b.queued_at is not null) as ever_queued,
+              count(*) filter (where b.queued_at is not null and b.confirmed_at is not null) as promoted,
+              coalesce(avg(extract(epoch from (b.confirmed_at - b.queued_at)) / 3600)
+                filter (where b.queued_at is not null and b.confirmed_at is not null), 0) as avg_wait_hours,
+              coalesce(sum(extract(epoch from (b.end_time - b.start_time)) / 3600) filter (where ${BOOKED}), 0) as booked_hours
          ${base}`,
       params,
     ),
     pool.query(
       `select v.id, v.name, count(b.id) as requests,
-              count(b.id) filter (where b.status = 'approved') as approved,
-              coalesce(sum(extract(epoch from (b.end_time - b.start_time)) / 60) filter (where b.status = 'approved'), 0) as approved_minutes
+              count(b.id) filter (where ${BOOKED}) as booked,
+              coalesce(sum(extract(epoch from (b.end_time - b.start_time)) / 60) filter (where ${BOOKED}), 0) as booked_minutes
          from public.venues v
          left join public.bookings b on b.venue_id = v.id and b.booking_date between $1::date and $2::date
         where ($3::uuid is null or v.id = $3)
@@ -40,15 +45,15 @@ export async function reportSummary(q: { from?: string; to?: string; venueId?: s
       params,
     ),
     pool.query(
-      `select p.role, count(*) as requests, count(*) filter (where b.status = 'approved') as approved
+      `select p.role, count(*) as requests, count(*) filter (where ${BOOKED}) as booked
          from public.bookings b join public.profiles p on p.id = b.requester_id
         where b.booking_date between $1::date and $2::date and ($3::uuid is null or b.venue_id = $3)
           and p.role in ('student','faculty_staff','department_staff')
         group by p.role`,
       params,
     ),
-    pool.query(`select extract(isodow from b.booking_date)::int as dow, count(*) as approved ${base} and b.status = 'approved' group by 1`, params),
-    pool.query(`select extract(hour from b.start_time)::int as hour, count(*) as approved ${base} and b.status = 'approved' group by 1`, params),
+    pool.query(`select extract(isodow from b.booking_date)::int as dow, count(*) as booked ${base} and ${BOOKED} group by 1`, params),
+    pool.query(`select extract(hour from b.start_time)::int as hour, count(*) as booked ${base} and ${BOOKED} group by 1`, params),
     pool.query(
       `select (b.created_at at time zone $4)::date::text as day, count(*) as n
          from public.bookings b
@@ -57,10 +62,10 @@ export async function reportSummary(q: { from?: string; to?: string; venueId?: s
       [...params, s.campusTimezone],
     ),
     pool.query(
-      `select (b.decided_at at time zone $4)::date::text as day, count(*) as n
+      `select (b.confirmed_at at time zone $4)::date::text as day, count(*) as n
          from public.bookings b
-        where b.status = 'approved' and b.decided_at is not null
-          and (b.decided_at at time zone $4)::date between $1::date and $2::date and ($3::uuid is null or b.venue_id = $3)
+        where b.confirmed_at is not null
+          and (b.confirmed_at at time zone $4)::date between $1::date and $2::date and ($3::uuid is null or b.venue_id = $3)
         group by 1`,
       [...params, s.campusTimezone],
     ),
@@ -69,11 +74,10 @@ export async function reportSummary(q: { from?: string; to?: string; venueId?: s
   const t = totals.rows[0];
   const days = diffDays(to, from) + 1;
   const operatingMinutes = timeToMinutes(s.operatingHoursEnd) - timeToMinutes(s.operatingHoursStart);
-  const decided = t.approved + t.rejected;
   const sub = new Map(trendSub.rows.map((r) => [r.day, r.n]));
-  const app = new Map(trendApp.rows.map((r) => [r.day, r.n]));
-  const dow = new Map(byWeekday.rows.map((r) => [r.dow, r.approved]));
-  const hours = new Map(byHour.rows.map((r) => [r.hour, r.approved]));
+  const booked = new Map(trendBooked.rows.map((r) => [r.day, r.n]));
+  const dow = new Map(byWeekday.rows.map((r) => [r.dow, r.booked]));
+  const hours = new Map(byHour.rows.map((r) => [r.hour, r.booked]));
   const firstHour = Math.floor(timeToMinutes(s.operatingHoursStart) / 60);
   const lastHour = Math.ceil(timeToMinutes(s.operatingHoursEnd) / 60) - 1;
 
@@ -81,35 +85,37 @@ export async function reportSummary(q: { from?: string; to?: string; venueId?: s
     range: { from, to },
     totals: {
       requests: t.requests,
-      pending: t.pending,
-      approved: t.approved,
-      rejected: t.rejected,
+      booked: t.booked,
+      confirmed: t.confirmed,
+      queued: t.queued,
+      completed: t.completed,
       cancelled: t.cancelled,
       expired: t.expired,
     },
-    approvalRate: decided ? Math.round((t.approved / decided) * 1000) / 1000 : 0,
-    avgDecisionHours: Math.round(Number(t.avg_hours) * 10) / 10,
-    approvedHours: Math.round(Number(t.approved_hours) * 10) / 10,
+    queuedShare: t.requests ? Math.round((t.ever_queued / t.requests) * 1000) / 1000 : 0,
+    promotedCount: t.promoted,
+    avgQueueWaitHours: Math.round(Number(t.avg_wait_hours) * 10) / 10,
+    bookedHours: Math.round(Number(t.booked_hours) * 10) / 10,
     byVenue: byVenue.rows.map((r) => ({
       venueId: r.id,
       venueName: r.name,
       requests: r.requests,
-      approved: r.approved,
-      approvedHours: Math.round((Number(r.approved_minutes) / 60) * 10) / 10,
-      utilizationPct: operatingMinutes > 0 ? Math.round((Number(r.approved_minutes) / (operatingMinutes * days)) * 1000) / 10 : 0,
+      booked: r.booked,
+      bookedHours: Math.round((Number(r.booked_minutes) / 60) * 10) / 10,
+      utilizationPct: operatingMinutes > 0 ? Math.round((Number(r.booked_minutes) / (operatingMinutes * days)) * 1000) / 10 : 0,
     })),
-    byRole: (['student', 'faculty_staff'] as const).map((role) => {
+    byRole: (['student', 'faculty_staff', 'department_staff'] as const).map((role) => {
       const r = byRole.rows.find((x) => x.role === role);
-      return { role, requests: r?.requests ?? 0, approved: r?.approved ?? 0 };
+      return { role, requests: r?.requests ?? 0, booked: r?.booked ?? 0 };
     }),
-    byWeekday: WEEKDAYS.map((label, i) => ({ weekday: i + 1, label, approved: dow.get(i + 1) ?? 0 })),
+    byWeekday: WEEKDAYS.map((label, i) => ({ weekday: i + 1, label, booked: dow.get(i + 1) ?? 0 })),
     byHour: Array.from({ length: Math.max(0, lastHour - firstHour + 1) }, (_, i) => ({
       hour: firstHour + i,
-      approved: hours.get(firstHour + i) ?? 0,
+      booked: hours.get(firstHour + i) ?? 0,
     })),
     trend: Array.from({ length: days }, (_, i) => {
       const d = addDays(from, i);
-      return { date: d, submitted: sub.get(d) ?? 0, approved: app.get(d) ?? 0 };
+      return { date: d, submitted: sub.get(d) ?? 0, booked: booked.get(d) ?? 0 };
     }),
     generatedAt: new Date().toISOString(),
   };

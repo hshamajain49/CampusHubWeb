@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Link, Navigate, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { BellRing, Building2, CalendarDays, Clock, NotebookPen, UsersRound } from 'lucide-react';
+import { BellRing, Building2, CalendarDays, Clock, IdCard, ListOrdered, NotebookPen, UsersRound } from 'lucide-react';
 import { formatLongDate, formatTimeRange } from '@/lib/format';
 import { readPref, writePref } from '@/lib/session-token';
 import { useDocumentTitle } from '@/hooks/misc';
@@ -35,7 +35,18 @@ function SuccessCheck() {
   );
 }
 
-function PushPrompt() {
+/** Queued: the place in line, in the same visual weight as the success check. */
+function QueueBadge({ position }: { position: number | null }) {
+  return (
+    <div className="relative mx-auto grid size-[72px] place-items-center">
+      <span className="pop-in-once relative grid size-[72px] place-items-center rounded-full bg-[#FDF4DC] text-[#7A5A00] shadow-[0_8px_24px_rgba(122,90,0,0.18)]">
+        {position ? <span className="tabular font-display text-[26px] font-semibold">#{position}</span> : <ListOrdered className="size-8" aria-hidden />}
+      </span>
+    </div>
+  );
+}
+
+function PushPrompt({ text }: { text: string }) {
   const { data: settings } = usePublicSettings();
   const [hidden, setHidden] = React.useState(() => readPref('pushPrompt.dismissed') === '1');
   const [busy, setBusy] = React.useState(false);
@@ -46,7 +57,7 @@ function PushPrompt() {
       <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white text-primary">
         <BellRing className="size-[18px]" />
       </span>
-      <p className="min-w-0 flex-1 text-[13px] font-medium text-[#1F2F66]">Get notified on this device when it's decided</p>
+      <p className="min-w-0 flex-1 text-[13px] font-medium text-[#1F2F66]">{text}</p>
       <div className="flex gap-1.5">
         <Button
           size="sm"
@@ -86,14 +97,14 @@ function PushPrompt() {
 export function BookingSubmittedPage() {
   const { bookingId } = useParams();
   const q = useBooking(bookingId);
-  useDocumentTitle('Booking requested');
-  const [firstStatus] = React.useState(() => q.data?.status);
+  const queued = q.data?.status === 'queued';
+  useDocumentTitle(queued ? 'In the queue' : 'Booking confirmed');
 
   if (q.isLoading) return <Skeleton className="mx-auto h-[560px] max-w-[560px] rounded-[18px]" />;
   if (q.isError) return <ErrorState onRetry={() => q.refetch()} />;
   const b = q.data!;
-  // Reloaded later, after a decision: show the details page instead.
-  if (b.status !== 'pending' && firstStatus !== 'pending') return <Navigate to={`/bookings/${b.id}`} replace />;
+  // Reloaded later, once the booking was cancelled, expired or completed: show the details page instead.
+  if (b.status !== 'confirmed' && b.status !== 'queued') return <Navigate to={`/bookings/${b.id}`} replace />;
 
   const rows = [
     { icon: Building2, label: 'Venue', value: b.venue.name },
@@ -101,19 +112,24 @@ export function BookingSubmittedPage() {
     { icon: Clock, label: 'Time', value: formatTimeRange(b.startTime, b.endTime) },
     { icon: NotebookPen, label: 'Purpose', value: b.purpose },
     { icon: UsersRound, label: 'Attendees', value: b.expectedAttendees ? String(b.expectedAttendees) : 'Not specified' },
+    ...(b.idNumber ? [{ icon: IdCard, label: 'USN / ID', value: b.idNumber }] : []),
   ];
 
   return (
     <div className="mx-auto max-w-[560px] py-2">
       <article className="relative overflow-hidden rounded-[18px] border border-border bg-surface shadow-raised">
         <div className="px-6 pb-7 pt-8 text-center sm:px-8">
-          <SuccessCheck />
-          <h1 className="mt-5 font-display text-[24px] font-semibold leading-8 text-ink">Booking requested!</h1>
+          {queued ? <QueueBadge position={b.queuePosition} /> : <SuccessCheck />}
+          <h1 className="mt-5 font-display text-[24px] font-semibold leading-8 text-ink">
+            {queued ? `You're #${b.queuePosition ?? '?'} in the queue` : 'Booking confirmed!'}
+          </h1>
           <p className="mx-auto mt-2 max-w-[420px] text-sm leading-[22px] text-muted">
-            Your request has been sent to the administrator for review. We'll notify you when it's decided. You can also track it under My bookings.
+            {queued
+              ? "Someone booked this time first. If they cancel, the slot goes to the queue in order and becomes yours automatically; we'll notify you. You can leave the queue any time."
+              : 'The venue is yours: no approval needed. Download the confirmation from the booking page, and cancel there if your plans change.'}
           </p>
           <div className="mt-5">
-            <PushPrompt />
+            <PushPrompt text={queued ? 'Get notified on this device if the slot frees up' : 'Get a reminder on this device before it starts'} />
           </div>
         </div>
 
@@ -131,7 +147,7 @@ export function BookingSubmittedPage() {
               <p className="mt-0.5 font-mono text-[17px] font-semibold tracking-[0.02em] text-ink">{b.reference}</p>
             </div>
             <div className="flex items-center gap-2">
-              <StatusBadge status={b.status} />
+              <StatusBadge status={b.status} queuePosition={b.queuePosition} />
               <CopyButton value={b.reference} label="Copy reference" />
             </div>
           </div>

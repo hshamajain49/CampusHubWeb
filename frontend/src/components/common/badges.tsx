@@ -1,17 +1,28 @@
-import { Ban, BriefcaseBusiness, CircleCheck, CircleX, GraduationCap, Hourglass, ShieldCheck, TimerOff, Wrench } from 'lucide-react';
+import { Ban, BriefcaseBusiness, CheckCheck, CircleCheck, GraduationCap, Hourglass, ListOrdered, ShieldCheck, TimerOff, Wrench } from 'lucide-react';
 import { ROLE_LABELS, STATUS_LABELS, type BookingStatus, type Role } from '@campushub/shared';
 import { cn } from '@/lib/utils';
 
 const STATUS: Record<BookingStatus, { cls: string; icon: typeof Hourglass }> = {
-  pending: { cls: 'bg-[#FDF4DC] text-[#7A5A00]', icon: Hourglass },
-  approved: { cls: 'bg-[#E3F5EC] text-[#146C43]', icon: CircleCheck },
-  rejected: { cls: 'bg-[#FCE8E8] text-[#A52A2A]', icon: CircleX },
+  confirmed: { cls: 'bg-[#E3F5EC] text-[#146C43]', icon: CircleCheck },
+  queued: { cls: 'bg-[#FDF4DC] text-[#7A5A00]', icon: ListOrdered },
+  completed: { cls: 'bg-secondary-soft text-secondary-text', icon: CheckCheck },
   cancelled: { cls: 'bg-[#EEF0F4] text-[#4A5468]', icon: Ban },
   expired: { cls: 'bg-[#FDEEDD] text-[#9A5410]', icon: TimerOff },
 };
 
 /** Status is never conveyed by colour alone: icon + label (§19.9). */
-export function StatusBadge({ status, className, size = 'md' }: { status: BookingStatus; className?: string; size?: 'sm' | 'md' }) {
+export function StatusBadge({
+  status,
+  queuePosition,
+  className,
+  size = 'md',
+}: {
+  status: BookingStatus;
+  /** Queued bookings: shown as "In Queue · #2". */
+  queuePosition?: number | null;
+  className?: string;
+  size?: 'sm' | 'md';
+}) {
   const s = STATUS[status];
   const Icon = s.icon;
   return (
@@ -25,6 +36,7 @@ export function StatusBadge({ status, className, size = 'md' }: { status: Bookin
     >
       <Icon aria-hidden strokeWidth={2.4} />
       {STATUS_LABELS[status]}
+      {status === 'queued' && queuePosition ? <span className="tabular">· #{queuePosition}</span> : null}
     </span>
   );
 }
