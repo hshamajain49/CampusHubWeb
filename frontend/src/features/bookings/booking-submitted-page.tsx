@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Link, Navigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { BellRing, Building2, CalendarDays, Clock, IdCard, ListOrdered, NotebookPen, UsersRound } from 'lucide-react';
-import { formatLongDate, formatTimeRange } from '@/lib/format';
+
 import { readPref, writePref } from '@/lib/session-token';
 import { useDocumentTitle } from '@/hooks/misc';
 import { usePublicSettings } from '@/hooks/use-public-settings';
@@ -12,6 +12,8 @@ import { StatusBadge } from '@/components/common/badges';
 import { CopyButton } from '@/components/common/small';
 import { ErrorState } from '@/components/common/states';
 import { useBooking } from './api';
+import { formatBookingLongDates, formatTimeRange } from '@/lib/format';
+import { useBookingPaths } from './paths';
 
 function SuccessCheck() {
   return (
@@ -95,6 +97,7 @@ function PushPrompt({ text }: { text: string }) {
 }
 
 export function BookingSubmittedPage() {
+  const paths = useBookingPaths();
   const { bookingId } = useParams();
   const q = useBooking(bookingId);
   const queued = q.data?.status === 'queued';
@@ -104,12 +107,12 @@ export function BookingSubmittedPage() {
   if (q.isError) return <ErrorState onRetry={() => q.refetch()} />;
   const b = q.data!;
   // Reloaded later, once the booking was cancelled, expired or completed: show the details page instead.
-  if (b.status !== 'confirmed' && b.status !== 'queued') return <Navigate to={`/bookings/${b.id}`} replace />;
+  if (b.status !== 'confirmed' && b.status !== 'queued') return <Navigate to={paths.detail(b.id)} replace />;
 
   const rows = [
     { icon: Building2, label: 'Venue', value: b.venue.name },
-    { icon: CalendarDays, label: 'Date', value: formatLongDate(b.date) },
-    { icon: Clock, label: 'Time', value: formatTimeRange(b.startTime, b.endTime) },
+    { icon: CalendarDays, label: b.days > 1 ? 'Dates' : 'Date', value: formatBookingLongDates(b) },
+    { icon: Clock, label: 'Time', value: `${formatTimeRange(b.startTime, b.endTime)}${b.days > 1 ? ' daily' : ''}` },
     { icon: NotebookPen, label: 'Purpose', value: b.purpose },
     { icon: UsersRound, label: 'Attendees', value: b.expectedAttendees ? String(b.expectedAttendees) : 'Not specified' },
     ...(b.idNumber ? [{ icon: IdCard, label: 'USN / ID', value: b.idNumber }] : []),
@@ -163,14 +166,14 @@ export function BookingSubmittedPage() {
           </dl>
           <div className="mt-6 grid gap-2 sm:grid-cols-2">
             <Button asChild size="lg">
-              <Link to={`/bookings/${b.id}`}>View booking</Link>
+              <Link to={paths.detail(b.id)}>View booking</Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link to="/venues">Book another venue</Link>
+              <Link to={paths.venues}>Book another venue</Link>
             </Button>
           </div>
           <div className="mt-4 text-center">
-            <Link to="/dashboard" className="text-[13px] font-semibold text-primary hover:underline">
+            <Link to={paths.home} className="text-[13px] font-semibold text-primary hover:underline">
               Go to dashboard
             </Link>
           </div>

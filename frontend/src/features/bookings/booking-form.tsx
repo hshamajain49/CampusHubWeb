@@ -8,8 +8,10 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { CalendarCheck2, CircleCheck, CircleX, Clock, Info, ListOrdered, MapPin, Sun, TriangleAlert, Users } from 'lucide-react';
 import {
+  MAX_BOOKING_DAYS,
   ROLE_LABELS,
   addDays,
+  bookingDays,
   collectSlotViolations,
   durationMinutes,
   formatDuration,
@@ -27,7 +29,7 @@ import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
 import { useMe } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
-import { Alert } from '@/components/ui/controls';
+import { Alert, Switch } from '@/components/ui/controls';
 import { Tooltip } from '@/components/ui/menus';
 import { Field } from '@/components/common/form-field';
 import { DatePicker, TimeSelect } from '@/components/common/pickers';
@@ -38,15 +40,25 @@ import { UserAvatar } from '@/components/common/small';
 import { VenueBanner } from '@/components/common/venue-visuals';
 import { useAvailability, useAvailabilityCheck } from '@/features/venues/api';
 import { useCreateBooking, useUpdateBooking } from './api';
-import { buildBookingFormSchema, type BookingFormValues } from './lib/booking-form-schema';
-import { formatNumber } from '@/lib/format';
+import { buildBookingFormSchema, formEndDate, type BookingFormValues } from './lib/booking-form-schema';
+import { formatBookingDates, formatNumber, formatShortDay } from '@/lib/format';
 import { VenueCombobox } from './venue-combobox';
+import { useBookingPaths } from './paths';
 
 type ServerAlert = { variant: 'error' | 'warning'; title: string; body?: React.ReactNode; action?: React.ReactNode } | null;
 
-function intervalText(i: AvailabilityInterval) {
+/** "10:00–12:00 · Booked"; multi-day requests prefix the day ("Wed 20 Nov 10:00–12:00 · Booked"). */
+function intervalText(i: AvailabilityInterval, withDay = false) {
   const kind = i.isMine ? (i.kind === 'queued' ? 'Your queued request' : 'Your booking') : i.kind === 'booked' ? 'Booked' : i.label;
-  return `${i.start.slice(11, 16)}–${i.end.slice(11, 16)} · ${kind}`;
+  const day = withDay ? `${formatShortDay(i.start.slice(0, 10))} ` : '';
+  return `${day}${i.start.slice(11, 16)}–${i.end.slice(11, 16)} · ${kind}`;
+}
+
+/** Every date from a to b inclusive. */
+function daysBetween(a: string, b: string): string[] {
+  const out: string[] = [];
+  for (let d = a; d <= b && out.length < MAX_BOOKING_DAYS; d = addDays(d, 1)) out.push(d);
+  return out;
 }
 
 const ID_PLACEHOLDER: Record<string, string> = { student: 'e.g. 1RV22CS045', faculty_staff: 'e.g. FAC-1024', department_staff: 'e.g. STF-0042' };
@@ -64,6 +76,7 @@ export function BookingForm({
   allowChangeVenue: boolean;
   booking?: Booking;
 }) {
+  const paths = useBookingPaths();
   const me = useMe();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -88,17 +101,25 @@ export function BookingForm({
     defaultValues: initial,
   });
   const { errors, isSubmitting, isDirty, dirtyFields } = form.formState;
-  const [date, startTime, endTime, purpose] = form.watch(['date', 'startTime', 'endTime', 'purpose']);
+  const [date, multiDay, endDateValue, startTime, endTime, purpose] = form.watch(['date', 'multiDay', 'endDate', 'startTime', 'endTime', 'purpose']);
+  // The effective last day (undefined = one day) and the number of days booked.
+  const endDate = formEndDate({ date, multiDay, endDate: endDateValue });
+  const lastDay = endDate ?? date;
+  const days = date ? bookingDays(date, endDate) : 1;
 
   const create = useCreateBooking();
   const update = useUpdateBooking(booking?.id ?? '');
 
-  // Day availability for the chosen date (the bar) and the debounced live check.
-  const avail = useAvailability(venue?.id, date || undefined, date || undefined);
+  // Availability for the chosen day(s) (the bars) and the debounced live check.
+  const avail = useAvailability(venue?.id, date || undefined, lastDay || undefined);
   const others = (avail.data?.intervals ?? []).filter((i) => !(booking && i.bookingId === booking.id));
   const localViolations =
-    rules && now && date && startTime && endTime ? collectSlotViolations({ date, startTime, endTime }, rules, now.localDateTime) : [];
-  const slot = venue && date && startTime && endTime && localViolations.length === 0 ? { date, startTime, endTime, ...(booking ? { excludeBookingId: booking.id } : {}) } : null;
+    rules && now && date && startTime && endTime ? collectSlotViolations({ date, endDate, startTime, endTime }, rules, now.localDateTime) : [];
+  const multiDayIncomplete = multiDay && !endDate;
+  const slot =
+    venue && date && startTime && endTime && localViolations.length === 0 && !multiDayIncomplete
+      ? { date, ...(endDate ? { endDate } : {}), startTime, endTime, ...(booking ? { excludeBookingId: booking.id } : {}) }
+      : null;
   const debouncedSlot = useDebouncedValue(slot, 400);
   const sameSlot = JSON.stringify(slot) === JSON.stringify(debouncedSlot);
   const check = useAvailabilityCheck(venue?.id, debouncedSlot);
@@ -128,7 +149,35 @@ export function BookingForm({
   };
 
   const windowMinutes = timeToMinutes(close) - timeToMinutes(open);
-  const fullDayBusy = date && others.some((i) => i.start.slice(0, 10) <= date && i.end.slice(0, 10) >= date);
+  const fullDayBusy = date && others.some((i) => i.start.slice(0, 10) <= lastDay && i.end.slice(0, 10) >= date);
+  /** Latest last day for a booking starting on d: MAX_BOOKING_DAYS in all, inside the advance window. */
+  const maxEndFor = (d: string) => {
+    const a = addDays(d, MAX_BOOKING_DAYS - 1);
+    const b = addDays(now.date, rules.maxAdvanceDays);
+    return a < b ? a : b;
+  };
+  const revalidateEnd = () => form.formState.isSubmitted || !!errors.endDate;
+  const setMultiDay = (on: boolean) => {
+    form.setValue('multiDay', on, { shouldDirty: true });
+    if (!on) form.setValue('endDate', '', { shouldDirty: true });
+    else if (date && !endDateValue) {
+      const next = addDays(date, 1);
+      if (next <= maxEndFor(date)) form.setValue('endDate', next, { shouldDirty: true });
+    }
+    form.clearErrors('endDate');
+    setServerAlert(null);
+  };
+  /** Moving the first day keeps the number of days (clamped to the limits). */
+  const onStartDate = (d: string, change: (v: string) => void) => {
+    const span = endDate ? days - 1 : multiDay ? 1 : 0;
+    change(d);
+    if (multiDay && d) {
+      const next = addDays(d, span);
+      const max = maxEndFor(d);
+      form.setValue('endDate', next > max ? max : next, { shouldDirty: true, shouldValidate: revalidateEnd() });
+    }
+    setServerAlert(null);
+  };
   const fullDayReason =
     windowMinutes > maxD
       ? `The operating day is longer than the ${formatDuration(maxD)} maximum.`
@@ -167,9 +216,9 @@ export function BookingForm({
             <ul className="mt-1 grid gap-0.5">
               {d.conflicts.map((c: AvailabilityInterval, i: number) => (
                 <li key={i} className="tabular">
-                  {intervalText(c)}
+                  {intervalText(c, days > 1)}
                   {c.isMine && c.bookingId && (
-                    <Link to={`/bookings/${c.bookingId}`} className="ml-2 font-semibold underline">
+                    <Link to={paths.detail(c.bookingId)} className="ml-2 font-semibold underline">
                       View it
                     </Link>
                   )}
@@ -186,7 +235,7 @@ export function BookingForm({
           title: mode === 'edit' ? err.message : 'This venue is no longer accepting bookings.',
           action: (
             <Button size="sm" variant="outline" asChild>
-              <Link to="/venues">Browse venues</Link>
+              <Link to={paths.venues}>Browse venues</Link>
             </Button>
           ),
         });
@@ -196,7 +245,7 @@ export function BookingForm({
           title: err.message,
           action: (
             <Button size="sm" variant="outline" asChild>
-              <Link to="/bookings">My bookings</Link>
+              <Link to={paths.list}>My bookings</Link>
             </Button>
           ),
         });
@@ -206,7 +255,7 @@ export function BookingForm({
           title: err.message,
           action: d.bookingId ? (
             <Button size="sm" variant="outline" asChild>
-              <Link to={`/bookings/${d.bookingId}`}>View it</Link>
+              <Link to={paths.detail(d.bookingId)}>View it</Link>
             </Button>
           ) : undefined,
         });
@@ -239,25 +288,33 @@ export function BookingForm({
       setServerAlert(null);
       try {
         if (mode === 'create') {
-          const b = await create.mutateAsync({ input: { ...v, expectedAttendees: v.expectedAttendees ?? null }, idempotencyKey: idempotencyKey.current });
+          const { multiDay: _multi, endDate: _end, ...rest } = v;
+          const end = formEndDate(v);
+          const b = await create.mutateAsync({
+            input: { ...rest, ...(end ? { endDate: end } : {}), expectedAttendees: v.expectedAttendees ?? null },
+            idempotencyKey: idempotencyKey.current,
+          });
           idempotencyKey.current = crypto.randomUUID();
           setDone(true);
-          navigate(`/bookings/${b.id}/submitted`, { replace: true });
+          navigate(paths.submitted(b.id), { replace: true });
         } else if (booking) {
           const body: Record<string, unknown> = { version: booking.version };
           for (const k of ['date', 'startTime', 'endTime', 'purpose', 'expectedAttendees', 'idNumber'] as const) {
             if (dirtyFields[k] && v[k] !== initial[k]) body[k] = v[k];
           }
+          // The last day is always explicit when it moves (turning multi-day off books just the first day).
+          const nextEnd = formEndDate(v) ?? v.date;
+          if (nextEnd !== (formEndDate(initial) ?? initial.date)) body.endDate = nextEnd;
           const b = await update.mutateAsync(body);
           setDone(true);
           toast.success(
             booking.status === 'queued' && b.status === 'confirmed'
               ? 'Moved to a free time: your booking is confirmed.'
-              : b.status === 'queued' && (body.date || body.startTime || body.endTime)
+              : b.status === 'queued' && (body.date || body.endDate || body.startTime || body.endTime)
                 ? `Booking updated. You're #${b.queuePosition ?? '?'} in the queue for the new time.`
                 : 'Booking updated.',
           );
-          navigate(`/bookings/${booking.id}`, { replace: true });
+          navigate(paths.detail(booking.id), { replace: true });
         }
       } catch (err) {
         handleError(err);
@@ -279,10 +336,12 @@ export function BookingForm({
     if (check.isError) return null;
     const c = check.data;
     if (!c) return null;
+    const multi = days > 1;
+    const list = (xs: AvailabilityInterval[]) => xs.map((x) => intervalText(x, multi)).join(', ');
     if (c.outcome === 'confirm')
       return (
         <span className="inline-flex items-center gap-1.5 font-semibold text-success-text">
-          <CircleCheck className="size-4" /> This time is free: it will be confirmed instantly
+          <CircleCheck className="size-4" /> {multi ? `Free on all ${days} days: it will be confirmed instantly` : 'This time is free: it will be confirmed instantly'}
         </span>
       );
     if (c.outcome === 'queue')
@@ -290,8 +349,9 @@ export function BookingForm({
         <span className="inline-flex items-start gap-1.5 font-semibold text-warning-text">
           <ListOrdered className="mt-px size-4 shrink-0" />
           <span>
-            Already booked ({c.conflicts.map(intervalText).join(', ')}). You'll join the queue as #{c.queuePosition ?? 1}, and get the slot
-            automatically if it frees up.
+            {multi
+              ? `Already booked on some days (${list(c.conflicts)}). The whole booking joins the queue as #${c.queuePosition ?? 1}, and is confirmed automatically once every day is free.`
+              : `Already booked (${list(c.conflicts)}). You'll join the queue as #${c.queuePosition ?? 1}, and get the slot automatically if it frees up.`}
           </span>
         </span>
       );
@@ -299,7 +359,7 @@ export function BookingForm({
     if (blocked.length)
       return (
         <span className="inline-flex items-start gap-1.5 font-semibold text-destructive-text">
-          <CircleX className="mt-px size-4 shrink-0" /> Unavailable: {blocked.map(intervalText).join(', ')}
+          <CircleX className="mt-px size-4 shrink-0" /> Unavailable: {list(blocked)}
         </span>
       );
     return (
@@ -334,6 +394,7 @@ export function BookingForm({
             'A free time is confirmed instantly: no approval needed.',
             "A booked time puts you in the queue, first come, first served. If it frees up, it's yours automatically.",
             'Cancel any time from My bookings; the next person in the queue gets the slot.',
+            `Need several days in a row? Turn on "Multiple days" to book the same time on up to ${MAX_BOOKING_DAYS} consecutive days at once.`,
           ].map((t, i) => (
             <li key={t} className="flex gap-2.5 text-[13px] leading-5 text-ink">
               <span className="tabular grid size-5 shrink-0 place-items-center rounded-full bg-primary-soft text-[11px] font-bold text-primary">{i + 1}</span>
@@ -385,7 +446,7 @@ export function BookingForm({
             <div className="hidden sm:block">
               <RoleBadge role={me.role} />
             </div>
-            <Link to="/profile" className="shrink-0 text-[12.5px] font-semibold text-primary hover:underline" aria-label={`Edit profile (${ROLE_LABELS[me.role]})`}>
+            <Link to={paths.profile} className="shrink-0 text-[12.5px] font-semibold text-primary hover:underline" aria-label={`Edit profile (${ROLE_LABELS[me.role]})`}>
               Edit profile
             </Link>
           </div>
@@ -443,28 +504,73 @@ export function BookingForm({
           }
         </Field>
 
-        <Field label="Date" error={errors.date?.message}>
-          {(p) => (
-            <Controller
-              control={form.control}
-              name="date"
-              render={({ field }) => (
-                <DatePicker
-                  id={p.id}
-                  invalid={!!p['aria-invalid']}
-                  describedBy={p['aria-describedby']}
-                  value={field.value || null}
-                  onChange={(d) => {
-                    field.onChange(d);
-                    setServerAlert(null);
-                  }}
-                  min={now.date}
-                  max={addDays(now.date, rules.maxAdvanceDays)}
+        <div className="grid gap-2">
+          <div className={cn('grid gap-4', multiDay && 'sm:grid-cols-2')}>
+            <Field
+              label={multiDay ? 'First day' : 'Date'}
+              error={errors.date?.message}
+              labelAction={
+                <label className="-my-1 flex cursor-pointer items-center gap-2 text-[12.5px] font-semibold text-ink sm:hidden">
+                  <Switch checked={multiDay} onCheckedChange={setMultiDay} aria-label="Multiple days" /> Multiple days
+                </label>
+              }
+            >
+              {(p) => (
+                <Controller
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <DatePicker
+                      id={p.id}
+                      invalid={!!p['aria-invalid']}
+                      describedBy={p['aria-describedby']}
+                      value={field.value || null}
+                      onChange={(d) => onStartDate(d ?? '', field.onChange)}
+                      min={now.date}
+                      max={addDays(now.date, rules.maxAdvanceDays)}
+                    />
+                  )}
                 />
               )}
-            />
-          )}
-        </Field>
+            </Field>
+            {multiDay && (
+              <Field label="Last day" error={errors.endDate?.message}>
+                {(p) => (
+                  <Controller
+                    control={form.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <DatePicker
+                        id={p.id}
+                        invalid={!!p['aria-invalid']}
+                        describedBy={p['aria-describedby']}
+                        value={field.value || null}
+                        onChange={(d) => {
+                          field.onChange(d ?? '');
+                          setServerAlert(null);
+                        }}
+                        min={date ? addDays(date, 1) : now.date}
+                        max={maxEndFor(date || now.date)}
+                      />
+                    )}
+                  />
+                )}
+              </Field>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <label className="hidden cursor-pointer items-center gap-2 text-[13px] font-semibold text-ink sm:flex">
+              <Switch checked={multiDay} onCheckedChange={setMultiDay} aria-label="Multiple days" /> Multiple days
+            </label>
+            <p className="text-[12.5px] text-muted">
+              {multiDay
+                ? endDate
+                  ? `${days} days · ${formatBookingDates({ date, endDate })}. The same time is booked on every day, all together.`
+                  : `Up to ${MAX_BOOKING_DAYS} consecutive days, same time each day.`
+                : 'Turn on Multiple days to book consecutive days.'}
+            </p>
+          </div>
+        </div>
 
         <fieldset className="grid gap-2">
           <div className="flex items-center justify-between gap-2">
@@ -511,7 +617,11 @@ export function BookingForm({
             />
           </div>
           <div className="flex min-h-5 flex-wrap items-center justify-between gap-2 text-[12.5px]">
-            <span className="tabular text-muted">{duration !== null ? `Duration: ${formatDuration(duration)}` : `Between ${formatDuration(minD)} and ${formatDuration(maxD)}`}</span>
+            <span className="tabular text-muted">
+              {duration !== null
+                ? `Duration: ${formatDuration(duration)}${days > 1 ? ` each day · ${days} days` : ''}`
+                : `Between ${formatDuration(minD)} and ${formatDuration(maxD)}${multiDay ? ' each day' : ''}`}
+            </span>
           </div>
           <div aria-live="polite">
             {timeError && (
@@ -522,14 +632,34 @@ export function BookingForm({
           </div>
           {venue && date && (
             <div className="mt-1 grid gap-2 rounded-[12px] border border-border p-3">
-              <DayAvailabilityBar
-                date={date}
-                open={open}
-                close={close}
-                intervals={others}
-                selection={startTime && endTime && timeToMinutes(endTime) > timeToMinutes(startTime) ? { start: startTime, end: endTime } : null}
-                conflict={hardConflict}
-              />
+              {days > 1 ? (
+                <ul className="grid gap-1.5" aria-label="Availability by day">
+                  {daysBetween(date, lastDay).map((d) => (
+                    <li key={d} className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                      <span className="tabular text-[12px] font-semibold text-muted">{formatShortDay(d)}</span>
+                      <DayAvailabilityBar
+                        date={d}
+                        open={open}
+                        close={close}
+                        intervals={others}
+                        selection={startTime && endTime && timeToMinutes(endTime) > timeToMinutes(startTime) ? { start: startTime, end: endTime } : null}
+                        conflict={hardConflict}
+                        compact
+                        showTicks={false}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <DayAvailabilityBar
+                  date={date}
+                  open={open}
+                  close={close}
+                  intervals={others}
+                  selection={startTime && endTime && timeToMinutes(endTime) > timeToMinutes(startTime) ? { start: startTime, end: endTime } : null}
+                  conflict={hardConflict}
+                />
+              )}
               <AvailabilityLegend className="text-[11.5px]" />
             </div>
           )}

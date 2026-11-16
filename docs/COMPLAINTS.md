@@ -6,16 +6,37 @@ Supabase/Vercel assumptions. Put the spec itself next to this file as `docs/COMP
 ## What it does
 
 Anyone signed in reports a campus problem. The **category** routes it to a **service department**; that department's
-**staff** start the work and mark it done (note + "after" photos); the **reporter** approves the fix or sends it back.
-The **Super Admin** sees everything, reassigns misrouted complaints, closes invalid ones, manages departments and
-categories, and reads reports. Unreviewed fixes resolve automatically after 7 days; the reporter can still reopen an
-auto-resolved complaint for 7 more days (owner decision CD-03, option D).
+**staff** manage the work: start it, mark it done (note + "after" photos), reopen it, close duplicates or invalid
+reports, and ask the reporter to move it if it isn't theirs. The **reporter** approves the fix or sends it back, and
+can **move the complaint to another department** themselves. The **Super Admin monitors**: they see every complaint,
+its status and timeline, manage departments and categories, and read reports, but take no action on the work.
+Unreviewed fixes resolve automatically after 7 days; the reporter can still reopen an auto-resolved complaint for 7
+more days (owner decision CD-03, option D).
 
 | Who | Where |
 |---|---|
 | Reporter (every role) | `/complaints`, `/complaints/new` (also "Report an issue" in the header and on venue pages), `/complaints/:id` |
 | Department staff (`department_staff`) | `/staff` (dashboard), `/staff/complaints` (queue), `/staff/complaints/:id`; they are members too and can book venues (CD-02) |
-| Super Admin | `/admin/complaints`, `/admin/complaints/:id`, `/admin/complaints/new`, `/admin/complaint-setup`, Reports → Complaints, Settings → Rules |
+| Super Admin | `/admin/complaints`, `/admin/complaints/:id`, `/admin/complaints/new` (also **Report an issue** on the dashboard), `/admin/complaint-setup`, Reports → Complaints, Settings → Rules |
+
+## Who manages what (client change, Nov 2026)
+
+| Action | Who | API |
+|---|---|---|
+| Start work, mark done, reopen | Department staff of the complaint's department | `POST /staff/complaints/:id/start` · `/complete` · `/reopen` |
+| Close (duplicate, invalid, out of scope…) | Department staff | `POST /staff/complaints/:id/close` |
+| Ask to move it to another department | Department staff (optional suggested category) | `POST /staff/complaints/:id/request-reassignment` |
+| Move to another department | The **reporter**, while Pending Review or In Progress, with or without a request | `POST /complaints/:id/reassign` (`version`, `categoryId`, optional `note`) |
+| Keep it with the department after a request | The reporter | `POST /complaints/:id/dismiss-reassignment` |
+| Approve / reject the fix, withdraw, reopen an auto-resolved one | The reporter | unchanged |
+| Monitor status and progress | Super Admin | read-only `/admin/complaints*` |
+
+- Moving changes the category (and so the department): the complaint goes back to **Pending Review** in the new
+  department, the request flag is cleared and the timeline says "Moved from *A* to *B*".
+- A request stays on the complaint (flagged in the department's queue and on the admin's "Needs reassignment" list)
+  until the reporter moves it or keeps it.
+- The Super Admin gets reporter actions only on complaints they filed themselves. The admin start / complete /
+  reopen / reassign / close endpoints are removed (404).
 
 ## Setting it up
 
@@ -67,8 +88,9 @@ Edge-case notes: an optional withdrawal reason shorter than 3 characters is kept
 | Database (CDT-01…11) | `backend/tests/db/02-complaint-constraints.test.ts` |
 | API (CBT-01…17) | `backend/tests/integration/complaints.test.ts` |
 | Rules | `backend/tests/unit/complaint-rules.test.ts` |
+| Monitor-only admin, reporter moves, staff close (CBT-09, 10, 10b) | `backend/tests/integration/complaints.test.ts` |
 | Components (CFT) | `frontend/src/features/complaints/components/*.test.tsx` |
-| End to end (CE2E-01, 02, 03, 05, 07, 08, 10) | `e2e/tests/complaints.spec.ts`, `e2e/tests/responsive.spec.ts` |
+| End to end (CE2E-01, 02, 03 (staff ask → reporter moves; admin has no actions), 05, 07, 08, 10) | `e2e/tests/complaints.spec.ts`, `e2e/tests/responsive.spec.ts` |
 
 The e2e suite removes complaints titled `E2E …` from earlier runs. The complaint-creation rate limit (10 per hour per
 user) is in memory, so rerunning the e2e suite several times within an hour needs an API restart.

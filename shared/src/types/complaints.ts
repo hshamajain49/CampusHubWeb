@@ -92,7 +92,11 @@ export interface ComplaintPermissions {
   /** Reporter view: CB-21 (auto-resolved, inside the window). Staff/admin view: CB-10 (status resolved). */
   canReopen: boolean;
   canRequestReassignment: boolean;
+  /** Reporter: move the complaint to another category / department. */
   canReassign: boolean;
+  /** Reporter: keep the complaint where it is after a department asked to move it. */
+  canDismissReassignment: boolean;
+  /** Department staff: close as duplicate, invalid or out of scope. */
   canClose: boolean;
 }
 
@@ -103,7 +107,7 @@ export interface Complaint extends Omit<ComplaintSummary, 'reporter'> {
   rejectionReason: string | null;
   closureType: ClosureType | null;
   closureReason: string | null;
-  /** Staff and admins only. */
+  /** A department's request to move the complaint (shown to the reporter, the department and admins). */
   reassignmentNote: string | null;
   reassignmentSuggestedCategory: { id: string; name: string; department: DepartmentRef } | null;
   workStartedAt: string | null;

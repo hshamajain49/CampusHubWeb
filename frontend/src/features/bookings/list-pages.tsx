@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { CalendarDays, CalendarPlus, ChevronDown, Eye, History, MoreHorizontal, Repeat, X } from 'lucide-react';
 import type { BookingStatus, BookingSummary } from '@campushub/shared';
 import { cn } from '@/lib/utils';
-import { formatDate, formatTimeRange, monthKey, timeAgo } from '@/lib/format';
+
 import { useDocumentTitle, useIsMdUp } from '@/hooks/misc';
 import { useCampusNow } from '@/hooks/use-public-settings';
 import { Button } from '@/components/ui/button';
@@ -18,11 +18,14 @@ import { Pagination, Segmented } from '@/components/common/small';
 import { DatePicker } from '@/components/common/pickers';
 import { useMyBookings } from './api';
 import { patchParams } from '@/lib/search-params';
+import { formatBookingDates, formatTimeRange, monthKey, timeAgo } from '@/lib/format';
+import { useBookingPaths } from './paths';
 
 function SubNav({ active }: { active: 'upcoming' | 'history' }) {
+  const paths = useBookingPaths();
   const items = [
-    { to: '/bookings', label: 'Upcoming', key: 'upcoming', icon: CalendarDays },
-    { to: '/bookings/history', label: 'History', key: 'history', icon: History },
+    { to: paths.list, label: 'Upcoming', key: 'upcoming', icon: CalendarDays },
+    { to: paths.history, label: 'History', key: 'history', icon: History },
   ];
   return (
     <nav aria-label="Bookings" className="mb-5 flex gap-1 border-b border-border">
@@ -56,6 +59,7 @@ function ListSkeleton() {
 }
 
 export function MyBookingsPage() {
+  const paths = useBookingPaths();
   useDocumentTitle('My bookings');
   const [params, setParams] = useSearchParams();
   const now = useCampusNow();
@@ -81,7 +85,7 @@ export function MyBookingsPage() {
         description="Confirmed bookings that haven't ended yet, and requests waiting in a queue."
         actions={
           <Button asChild>
-            <Link to="/venues">
+            <Link to={paths.venues}>
               <CalendarPlus /> Book a venue
             </Link>
           </Button>
@@ -113,7 +117,7 @@ export function MyBookingsPage() {
             message="Reserve a venue and it will show up here."
             action={
               <Button asChild>
-                <Link to="/venues">Browse venues</Link>
+                <Link to={paths.venues}>Browse venues</Link>
               </Button>
             }
           />
@@ -127,7 +131,7 @@ export function MyBookingsPage() {
               </h2>
               <div className="stagger grid gap-3 md:grid-cols-2">
                 {g.items.map((b) => (
-                  <BookingCard key={b.id} booking={b} to={`/bookings/${b.id}`} today={now?.date} />
+                  <BookingCard key={b.id} booking={b} to={paths.detail(b.id)} today={now?.date} />
                 ))}
               </div>
             </section>
@@ -150,6 +154,7 @@ function reasonOf(b: BookingSummary) {
 }
 
 function RowMenu({ b }: { b: BookingSummary }) {
+  const paths = useBookingPaths();
   const navigate = useNavigate();
   return (
     <DropdownMenu>
@@ -159,11 +164,11 @@ function RowMenu({ b }: { b: BookingSummary }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuItem onSelect={() => navigate(`/bookings/${b.id}`)}>
+        <DropdownMenuItem onSelect={() => navigate(paths.detail(b.id))}>
           <Eye /> View details
         </DropdownMenuItem>
         {b.permissions.canRebook && (
-          <DropdownMenuItem onSelect={() => navigate(`/bookings/new?venueId=${b.venue.id}&purpose=${encodeURIComponent(b.purpose)}`)}>
+          <DropdownMenuItem onSelect={() => navigate(paths.create(`?venueId=${b.venue.id}&purpose=${encodeURIComponent(b.purpose)}`))}>
             <Repeat /> Book again
           </DropdownMenuItem>
         )}
@@ -173,6 +178,7 @@ function RowMenu({ b }: { b: BookingSummary }) {
 }
 
 export function BookingHistoryPage() {
+  const paths = useBookingPaths();
   useDocumentTitle('Booking history');
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
@@ -256,17 +262,20 @@ export function BookingHistoryPage() {
             </THead>
             <tbody>
               {q.data!.data.map((b) => (
-                <TR key={b.id} onClick={() => navigate(`/bookings/${b.id}`)}>
+                <TR key={b.id} onClick={() => navigate(paths.detail(b.id))}>
                   <TD className="font-mono text-[13px]">
-                    <Link to={`/bookings/${b.id}`} onClick={(e) => e.stopPropagation()} className="hover:underline">
+                    <Link to={paths.detail(b.id)} onClick={(e) => e.stopPropagation()} className="hover:underline">
                       {b.reference}
                     </Link>
                   </TD>
                   <TD className="max-w-[220px]">
                     <span className="block truncate font-semibold text-ink">{b.venue.name}</span>
                   </TD>
-                  <TD className="tabular whitespace-nowrap">{formatDate(b.date)}</TD>
-                  <TD className="tabular whitespace-nowrap">{formatTimeRange(b.startTime, b.endTime)}</TD>
+                  <TD className="tabular whitespace-nowrap">{formatBookingDates(b)}</TD>
+                  <TD className="tabular whitespace-nowrap">
+                    {formatTimeRange(b.startTime, b.endTime)}
+                    {b.days > 1 ? ' daily' : ''}
+                  </TD>
                   <TD className="max-w-[260px]">
                     <StatusBadge status={b.status} size="sm" />
                     {reasonOf(b) && (
@@ -288,7 +297,7 @@ export function BookingHistoryPage() {
         <div className="stagger grid gap-3">
           {q.data!.data.map((b) => (
             <div key={b.id}>
-              <BookingCard booking={b} to={`/bookings/${b.id}`} headingLevel={2} />
+              <BookingCard booking={b} to={paths.detail(b.id)} headingLevel={2} />
               {reasonOf(b) && <p className="mt-1.5 px-1 text-[12px] text-muted">Reason: {reasonOf(b)}</p>}
             </div>
           ))}

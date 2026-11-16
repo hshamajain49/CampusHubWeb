@@ -9,14 +9,20 @@ import { navigate } from '@/lib/navigation';
 import { authErrorMessage } from '@/features/auth/lib/auth-error-messages';
 
 type Status = 'loading' | 'unauthenticated' | 'authenticated';
-type SignOutReason = 'signed_out' | 'session_expired' | 'deactivated';
+type SignOutReason = 'signed_out' | 'session_expired' | 'deactivated' | 'account_deleted';
 
 interface AuthValue {
   status: Status;
   profile: Me | null;
   signIn(email: string, password: string): Promise<Me>;
-  signOut(reason?: SignOutReason): Promise<void>;
+  /** callApi: false skips the sign-out request (the session is already gone, e.g. after deleting the account). */
+  signOut(reason?: SignOutReason, opts?: { callApi?: boolean }): Promise<void>;
   refreshProfile(): Promise<Me | null>;
+  /**
+   * Where a sign-out in progress is sending the user (for a few seconds after it). The guards redirect there too, so
+   * their own "/login?redirectTo=…" redirect can't win the race and drop the reason banner.
+   */
+  signOutTarget: string | null;
 }
 
 const AuthContext = React.createContext<AuthValue | null>(null);
@@ -39,6 +45,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const [status, setStatus] = React.useState<Status>(() => (getToken() ? 'loading' : 'unauthenticated'));
   const signingOut = React.useRef(false);
+  const [signOutTarget, setSignOutTarget] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!signOutTarget) return;
+    const t = setTimeout(() => setSignOutTarget(null), 3000);
+    return () => clearTimeout(t);
+  }, [signOutTarget]);
 
   // Role changes apply quickly: /me is refetched every 60 s and on focus (§16.11).
   const me = useQuery({
@@ -67,11 +79,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } finally {
         clearToken();
         qc.clear();
-        setStatus('unauthenticated');
         const base = wasAdmin ? '/admin/login' : '/login';
         const params = new URLSearchParams({ reason });
         if (reason === 'session_expired' && !here.startsWith('/login') && !here.startsWith('/admin/login')) params.set('redirectTo', here);
-        navigate(`${base}?${params.toString()}`, { replace: true });
+        const target = `${base}?${params.toString()}`;
+        // Same render: the guards see the target together with the signed-out status.
+        setSignOutTarget(target);
+        setStatus('unauthenticated');
+        navigate(target, { replace: true });
         signingOut.current = false;
       }
     },
@@ -123,8 +138,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [me]);
 
   const value = React.useMemo<AuthValue>(
-    () => ({ status, profile, signIn, signOut: (r) => signOut(r), refreshProfile }),
-    [status, profile, signIn, signOut, refreshProfile],
+    () => ({ status, profile, signIn, signOut: (r, o) => signOut(r, o), refreshProfile, signOutTarget }),
+    [status, profile, signIn, signOut, refreshProfile, signOutTarget],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

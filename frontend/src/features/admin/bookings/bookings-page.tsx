@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Ban, Download, Eye, FileDown, MoreHorizontal, Search, SlidersHorizontal, X } from 'lucide-react';
 import { addDays, type AdminBookingListItem, type BookingStatus } from '@campushub/shared';
 import { cn } from '@/lib/utils';
-import { formatDate, formatTimeRange, formatTimestamp, timeAgo } from '@/lib/format';
+
 import { downloadFile } from '@/lib/download';
 import { useDebouncedValue, useDocumentTitle, useIsMdUp } from '@/hooks/misc';
 import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
@@ -23,6 +23,7 @@ import { BookingDateBlock } from '@/components/common/booking-visuals';
 import { useAdminBookings, useAllVenueOptions, type AdminBookingsParams } from '../api';
 import { CancelBookingDialog } from './cancel-booking-dialog';
 import { patchParams } from '@/lib/search-params';
+import { formatBookingDates, formatTimeRange, formatTimestamp, timeAgo } from '@/lib/format';
 
 const TABS: { value: 'all' | BookingStatus; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -153,8 +154,11 @@ export function BookingsTable({
                 </TD>
               )}
               <TD className="tabular whitespace-nowrap">
-                <span className="block text-ink">{formatDate(b.date)}</span>
-                <span className="block text-[12.5px] text-muted">{formatTimeRange(b.startTime, b.endTime)}</span>
+                <span className="block text-ink">{formatBookingDates(b)}</span>
+                <span className="block text-[12.5px] text-muted">
+                  {formatTimeRange(b.startTime, b.endTime)}
+                  {b.days > 1 ? ' daily' : ''}
+                </span>
               </TD>
               <TD className="max-w-[180px]">
                 <span className="block truncate font-medium text-ink" title={b.requester.fullName}>{b.requester.fullName}</span>

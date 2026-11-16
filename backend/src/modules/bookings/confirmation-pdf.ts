@@ -58,8 +58,8 @@ export function renderConfirmationPdf(b: Booking, ctx: PdfContext): Promise<Buff
     section('Booking details', [
       ['Venue', b.venue.name],
       ['Location', b.venue.locationDetails ? `${b.venue.building}, ${b.venue.locationDetails}` : b.venue.building],
-      ['Date', longDate(b.date)],
-      ['Time', `${b.startTime} – ${b.endTime} (${ctx.campusTimezone})`],
+      ['Date', b.days > 1 ? `${longDate(b.date)} – ${longDate(b.endDate)} (${b.days} days)` : longDate(b.date)],
+      ['Time', `${b.startTime} – ${b.endTime}${b.days > 1 ? ' every day' : ''} (${ctx.campusTimezone})`],
       ['Duration', formatDuration(b.durationMinutes)],
       ['Purpose', b.purpose],
       ['Expected attendees', b.expectedAttendees ? String(b.expectedAttendees) : 'Not specified'],

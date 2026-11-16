@@ -66,6 +66,8 @@ function useInvalidateBookings() {
 export interface CreateBookingInput {
   venueId: string;
   date: string;
+  /** Multi-day: last day (inclusive). */
+  endDate?: string;
   startTime: string;
   endTime: string;
   purpose: string;

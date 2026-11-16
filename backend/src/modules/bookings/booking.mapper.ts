@@ -1,5 +1,6 @@
 // Row → DTO mapping for member and admin booking views (§15.2).
 import {
+  bookingDays,
   durationMinutes,
   localDateTimeToMinutes,
   toLocalDateTime,
@@ -27,20 +28,28 @@ export function effectiveStatus(status: BookingStatus, start: string, end: strin
 }
 
 function timing(r: any, localNow: string) {
+  const endDate: string = r.end_date ?? r.date;
+  // start = first day's start, end = last day's end: they bound the whole booking.
   const start = toLocalDateTime(r.date, r.start_time);
-  const end = toLocalDateTime(r.date, r.end_time);
+  const end = toLocalDateTime(endDate, r.end_time);
   const now = localDateTimeToMinutes(localNow);
-  const s = localDateTimeToMinutes(start);
   const e = localDateTimeToMinutes(end);
   const status = effectiveStatus(r.status, start, end, localNow);
   const active = status === 'confirmed' || status === 'queued';
+  // Happening now: today is one of its days and the clock is inside that day's window.
+  const today = localNow.slice(0, 10);
+  const inDays = today >= r.date && today <= endDate;
+  const todayStart = localDateTimeToMinutes(toLocalDateTime(today, r.start_time));
+  const todayEnd = localDateTimeToMinutes(toLocalDateTime(today, r.end_time));
   return {
     start,
     end,
+    endDate,
+    days: bookingDays(r.date, endDate),
     status,
     durationMinutes: durationMinutes(r.start_time, r.end_time),
     isUpcoming: active && e > now,
-    isHappeningNow: status === 'confirmed' && s <= now && now < e,
+    isHappeningNow: status === 'confirmed' && inDays && todayStart <= now && now < todayEnd,
   };
 }
 
@@ -64,6 +73,8 @@ export function toBookingSummary(r: any, s: AppSettings, localNow: string): Book
     reference: r.reference,
     venue: { id: r.venue_id, name: r.venue_name, building: r.venue_building, isActive: r.venue_active },
     date: r.date,
+    endDate: t.endDate,
+    days: t.days,
     startTime: r.start_time,
     endTime: r.end_time,
     start: t.start,
@@ -126,6 +137,8 @@ export function toAdminListItem(r: any, localNow: string): AdminBookingListItem 
       isActive: r.requester_active,
     },
     date: r.date,
+    endDate: t.endDate,
+    days: t.days,
     startTime: r.start_time,
     endTime: r.end_time,
     start: t.start,

@@ -2,13 +2,16 @@
 
 Venue booking and complaint registration for a campus.
 
-- **Venue booking.** Students, faculty and department staff book campus venues (seminar halls, labs,
-  auditoriums) with no approval step: the first valid request for a time is confirmed instantly, later requests for
-  that time join a first-in, first-out queue and are confirmed automatically when it frees up. The admin is informed,
-  never asked. A PostgreSQL exclusion constraint makes two confirmed bookings of one slot impossible even under
-  concurrent requests. See [docs/BOOKINGS.md](docs/BOOKINGS.md).
+- **Venue booking.** Students, faculty, department staff and the Super Admin book campus venues (seminar halls,
+  labs, auditoriums) for one day or several consecutive days, with no approval step: the first valid request for a
+  time is confirmed instantly, later requests for that time join a first-in, first-out queue and are confirmed
+  automatically when it frees up. Everyone is told in-app when a venue is booked or becomes available again. A
+  PostgreSQL exclusion constraint makes two confirmed bookings of one slot impossible even under concurrent requests.
+  See [docs/BOOKINGS.md](docs/BOOKINGS.md).
 - **Complaints.** Anyone reports a campus problem (a broken fan, no Wi-Fi). The category routes it to a service
-  department, whose staff do the work; the reporter approves the fix or sends it back. See [Complaints](#complaints).
+  department, whose staff manage the work; the reporter approves the fix or sends it back, and can move it to another
+  department. The admin monitors. See [Complaints](#complaints).
+- **Suggestion box** and **permanent account deletion** (with what is kept): see [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
 
 | Layer | Stack |
 |---|---|
@@ -101,9 +104,9 @@ Implemented from `COMPLAINT_REGISTRATION_SPEC.md` v1.1; stack adaptations and de
 
 | Role | What they do | Where |
 |---|---|---|
-| Any signed-in user | File a complaint (category, title, optional venue/location/description, up to 3 photos), track it, approve or reject the fix, withdraw before work starts, reopen an auto-resolved one within the window | `/complaints` |
-| Department Staff | Work their department's queue: start, mark done (note + "after" photos), reopen, request reassignment; also book venues | `/staff` |
-| Super Admin | All complaints (filters, CSV), reassign, close, act for any department, departments & categories, reports | `/admin/complaints`, `/admin/complaint-setup` |
+| Any signed-in user | File a complaint (category, title, optional venue/location/description, up to 3 photos), track it, approve or reject the fix, withdraw before work starts, move it to another department, reopen an auto-resolved one within the window | `/complaints` |
+| Department Staff | Manage their department's queue: start, mark done (note + "after" photos), reopen, close, ask the reporter to move it; also book venues | `/staff` |
+| Super Admin | Monitor all complaints (filters, CSV, timelines), file their own, departments & categories, reports; no work actions | `/admin/complaints`, `/admin/complaint-setup` |
 
 - **Routing**: the category decides the department (7 departments/categories seeded from the Flutter app; managed
   under Departments & categories). Staff accounts are created in Users with role *Department Staff* and a service

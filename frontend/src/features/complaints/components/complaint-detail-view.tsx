@@ -25,7 +25,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { CLOSURE_TYPE_LABELS, type Complaint } from '@campushub/shared';
-import { formatTimestamp } from '@/lib/format';
+
 import { usePublicSettings } from '@/hooks/use-public-settings';
 import { useMe } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
@@ -49,6 +49,7 @@ import {
   WithdrawDialog,
 } from './complaint-dialogs';
 import type { ComplaintScope } from '../api';
+import { formatTimestamp } from '@/lib/format';
 
 type DialogName =
   | 'approve'
@@ -183,7 +184,11 @@ export function ComplaintDetailView({
   const p = c.permissions;
   const isReporter = c.reporter.id === me.id;
   const reporterView = scope === 'reporter';
-  const showReview = (reporterView || isReporter) && p.canApprove;
+  const staffView = scope === 'staff';
+  // The reporter decides where it belongs; an admin who filed the complaint acts as its reporter, otherwise monitors.
+  const asReporter = reporterView || isReporter;
+  const monitoring = scope === 'admin' && !isReporter;
+  const showReview = asReporter && p.canApprove;
 
   // Primary + secondary actions by viewer (§5 CW-05 table, CW-06).
   const actions: Action[] = [];
@@ -193,23 +198,31 @@ export function ComplaintDetailView({
     actions.push({ key: 'approve', label: 'Approve the fix', icon: <ThumbsUp />, variant: 'default', onClick: open('approve') });
     actions.push({ key: 'reject', label: 'Not fixed yet', icon: <ThumbsDown />, variant: 'destructive-outline', onClick: open('reject') });
   }
-  if (!reporterView) {
+  // The department manages the work.
+  if (staffView) {
     if (p.canStart) actions.push({ key: 'start', label: 'Start work', icon: <Wrench />, variant: 'default', onClick: open('start') });
     if (p.canComplete) actions.push({ key: 'complete', label: 'Mark work done', icon: <CheckCheck />, variant: 'default', onClick: open('complete') });
-    if (c.status === 'awaiting_confirmation' && !showReview)
-      actions.push({ key: 'wait', label: `Waiting for ${c.reporter.fullName.split(' ')[0]} to approve`, icon: <Clock />, variant: 'outline', disabled: true });
     if (p.canReopen) actions.push({ key: 'reopen', label: 'Reopen', icon: <RotateCcw />, variant: 'outline', onClick: open('reopen') });
     if (p.canRequestReassignment)
-      actions.push({ key: 'rr', label: 'Request reassignment', icon: <Flag />, variant: 'outline', onClick: open('requestReassignment') });
-    if (p.canReassign) actions.push({ key: 'reassign', label: 'Reassign', icon: <ArrowRightLeft />, variant: 'outline', onClick: open('reassign') });
-    if (scope === 'admin' && c.reassignmentRequested)
-      actions.push({ key: 'dismiss', label: 'Dismiss reassignment request', icon: <FlagOff />, variant: 'outline', onClick: open('dismiss') });
+      actions.push({ key: 'rr', label: 'Ask to move it', icon: <Flag />, variant: 'outline', onClick: open('requestReassignment') });
     if (p.canClose) actions.push({ key: 'close', label: 'Close complaint', icon: <XCircle />, variant: 'destructive-outline', onClick: open('close') });
-  } else if (p.canReopen) {
-    actions.push({ key: 'rreopen', label: 'Not fixed? Reopen', icon: <RotateCcw />, variant: 'default', onClick: open('reporterReopen') });
   }
-  if (p.canWithdraw && (reporterView || isReporter))
-    actions.push({ key: 'withdraw', label: 'Withdraw complaint', icon: <Undo2 />, variant: 'destructive-outline', onClick: open('withdraw') });
+  if (!asReporter && c.status === 'awaiting_confirmation')
+    actions.push({ key: 'wait', label: `Waiting for ${c.reporter.fullName.split(' ')[0]} to approve`, icon: <Clock />, variant: 'outline', disabled: true });
+  // The reporter (or an admin on a complaint they filed) decides where it belongs.
+  if (asReporter) {
+    if (p.canReopen) actions.push({ key: 'rreopen', label: 'Not fixed? Reopen', icon: <RotateCcw />, variant: 'default', onClick: open('reporterReopen') });
+    const move: Action[] = [];
+    if (p.canReassign)
+      move.push({ key: 'reassign', label: 'Move to another department', icon: <ArrowRightLeft />, variant: 'outline', onClick: open('reassign') });
+    if (p.canDismissReassignment)
+      move.push({ key: 'dismiss', label: `Keep it with ${c.department.name}`, icon: <FlagOff />, variant: 'outline', onClick: open('dismiss') });
+    const withdraw: Action[] = p.canWithdraw
+      ? [{ key: 'withdraw', label: 'Withdraw complaint', icon: <Undo2 />, variant: 'destructive-outline', onClick: open('withdraw') }]
+      : [];
+    // Moving leads (the phone bar shows the first action) only when the department asked for it.
+    actions.push(...(c.reassignmentRequested ? [...move, ...withdraw] : [...withdraw, ...move]));
+  }
   actions.push(...extraActions);
 
   const renderButton = (a: Action, extra = '') =>
@@ -226,7 +239,11 @@ export function ComplaintDetailView({
     );
   const finalNote = (
     <p className="rounded-[10px] bg-surface-muted px-3.5 py-3 text-[13px] text-muted">
-      {c.status === 'withdrawn' || c.status === 'closed' ? 'This complaint is final and can no longer be changed.' : 'No actions right now.'}
+      {c.status === 'withdrawn' || c.status === 'closed'
+        ? 'This complaint is final and can no longer be changed.'
+        : monitoring
+          ? `You're monitoring this complaint. ${c.department.name} manages the work; the person who reported it decides which department it belongs to.`
+          : 'No actions right now.'}
     </p>
   );
 
@@ -271,8 +288,34 @@ export function ComplaintDetailView({
                   <p className="whitespace-pre-line">{c.rejectionReason}</p>
                 </Alert>
               )}
-              {!reporterView && c.reassignmentRequested && (
-                <Alert variant="warning" icon={<Flag />} title="Reassignment requested">
+              {c.reassignmentRequested && (
+                <Alert
+                  variant="warning"
+                  icon={<Flag />}
+                  title={
+                    asReporter
+                      ? `${c.department.name} thinks this belongs to another department`
+                      : staffView
+                        ? 'You asked the reporter to move this'
+                        : `${c.department.name} asked the reporter to move this`
+                  }
+                  action={
+                    asReporter && (p.canReassign || p.canDismissReassignment) ? (
+                      <div className="flex flex-wrap gap-2">
+                        {p.canReassign && (
+                          <Button size="sm" onClick={open('reassign')}>
+                            <ArrowRightLeft /> {c.reassignmentSuggestedCategory ? `Move to ${c.reassignmentSuggestedCategory.department.name}` : 'Move it'}
+                          </Button>
+                        )}
+                        {p.canDismissReassignment && (
+                          <Button size="sm" variant="outline" onClick={open('dismiss')}>
+                            Keep it here
+                          </Button>
+                        )}
+                      </div>
+                    ) : undefined
+                  }
+                >
                   <p className="whitespace-pre-line">{c.reassignmentNote}</p>
                   {c.reassignmentSuggestedCategory && (
                     <p className="mt-1">
@@ -422,18 +465,22 @@ export function ComplaintDetailView({
       <RejectDialog {...dialogProps} scope="reporter" open={dialog === 'reject'} onOpenChange={(o) => !o && setDialog(null)} />
       <WithdrawDialog {...dialogProps} scope="reporter" open={dialog === 'withdraw'} onOpenChange={(o) => !o && setDialog(null)} />
       <ReporterReopenDialog {...dialogProps} scope="reporter" open={dialog === 'reporterReopen'} onOpenChange={(o) => !o && setDialog(null)} />
-      {scope !== 'reporter' && (
+      {staffView && (
         <>
           <StartWorkDialog {...dialogProps} scope={scope} open={dialog === 'start'} onOpenChange={(o) => !o && setDialog(null)} />
-          <CompleteWorkDialog {...dialogProps} scope={scope} open={dialog === 'complete'} onOpenChange={(o) => !o && setDialog(null)} />
+          <CompleteWorkDialog {...dialogProps} scope="staff" open={dialog === 'complete'} onOpenChange={(o) => !o && setDialog(null)} />
           <ReopenDialog {...dialogProps} scope={scope} open={dialog === 'reopen'} onOpenChange={(o) => !o && setDialog(null)} />
           <RequestReassignmentDialog {...dialogProps} scope={scope} open={dialog === 'requestReassignment'} onOpenChange={(o) => !o && setDialog(null)} />
         </>
       )}
-      {scope === 'admin' && (
+      {asReporter && (
         <>
           <ReassignDialog {...dialogProps} open={dialog === 'reassign'} onOpenChange={(o) => !o && setDialog(null)} />
           <DismissReassignmentDialog {...dialogProps} open={dialog === 'dismiss'} onOpenChange={(o) => !o && setDialog(null)} />
+        </>
+      )}
+      {staffView && (
+        <>
           <CloseDialog {...dialogProps} open={dialog === 'close'} onOpenChange={(o) => !o && setDialog(null)} />
         </>
       )}

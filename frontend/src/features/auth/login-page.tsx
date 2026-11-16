@@ -23,6 +23,7 @@ type Values = z.infer<typeof schema>;
 const BANNERS: Record<string, { variant: 'info' | 'error'; text: string }> = {
   session_expired: { variant: 'info', text: 'Your session has expired. Please sign in again.' },
   deactivated: { variant: 'error', text: 'Your account has been deactivated. Contact an administrator.' },
+  account_deleted: { variant: 'info', text: 'Your account and its data were deleted.' },
 };
 
 export function LoginPage({ variant }: { variant: 'member' | 'admin' }) {

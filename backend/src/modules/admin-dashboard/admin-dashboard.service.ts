@@ -17,13 +17,14 @@ export async function adminDashboard(): Promise<AdminDashboard> {
     pool.query(
       `select
          (select count(*) from public.bookings where status = 'queued' and (booking_date + start_time) > $1::timestamp) as queued,
-         (select count(*) from public.bookings where status in ('confirmed','completed') and booking_date = $2::date) as today_confirmed,
-         (select count(*) from public.bookings where status in ('confirmed','completed') and booking_date between $2::date and $3::date) as next7,
+         (select count(*) from public.bookings where status in ('confirmed','completed') and booking_date <= $2::date and end_date >= $2::date) as today_confirmed,
+         (select count(*) from public.bookings where status in ('confirmed','completed') and booking_date <= $3::date and end_date >= $2::date) as next7,
          (select count(*) from public.venues where is_active) as active_venues,
          (select count(*) from public.venues where not is_active) as inactive_venues,
          (select count(*) from public.profiles where is_active and role in ('student','faculty_staff','department_staff')) as active_members,
          (select count(*) from public.bookings where created_at > now() - interval '30 days') as new30,
-         (select count(*) from public.booking_history where event_type = 'promoted' and created_at > now() - interval '30 days') as promoted30`,
+         (select count(*) from public.booking_history where event_type = 'promoted' and created_at > now() - interval '30 days') as promoted30,
+         (select count(*) from public.suggestions where status = 'new') as new_suggestions`,
       [now, today, addDays(today, 6)],
     ),
     pool.query(
@@ -31,7 +32,10 @@ export async function adminDashboard(): Promise<AdminDashboard> {
         order by b.booking_date, b.start_time, b.queued_at limit 5`,
       [now],
     ),
-    pool.query(`${BOOKING_SELECT} where b.status in ('confirmed','completed') and b.booking_date = $1::date order by b.start_time`, [today]),
+    pool.query(
+      `${BOOKING_SELECT} where b.status in ('confirmed','completed') and b.booking_date <= $1::date and b.end_date >= $1::date order by b.start_time`,
+      [today],
+    ),
     pool.query(
       `select vb.*, vb.starts_at::text as s, vb.ends_at::text as e, v.name as venue_name, p.full_name as created_by_name
          from public.venue_blocks vb join public.venues v on v.id = vb.venue_id join public.profiles p on p.id = vb.created_by
@@ -61,6 +65,7 @@ export async function adminDashboard(): Promise<AdminDashboard> {
       activeMembers: k.active_members,
       newBookings30d: k.new30,
       promoted30d: k.promoted30,
+      newSuggestions: k.new_suggestions,
     },
     complaintKpis: cKpis,
     complaintsNeedingReassignment: reassign,
@@ -85,24 +90,29 @@ export async function calendar(q: { from: string; to: string; venueId?: string; 
   const range = [q.from, q.to, q.venueId ?? null];
   const events: CalendarEvent[] = [];
   if (q.statuses.length) {
+    // One event per day of a multi-day booking.
     const { rows } = await pool.query(
-      `${BOOKING_SELECT}
-        where b.slot && tsrange($1::date::timestamp, ($2::date + 1)::timestamp, '[)')
-          and ($3::uuid is null or b.venue_id = $3) and b.status = any($4::text[])
-        order by b.booking_date, b.start_time`,
+      `select bs.*, lower(d.piece)::text as day_start, upper(d.piece)::text as day_end, d.n as day_no
+         from (${BOOKING_SELECT}
+                where b.slot && tsrange($1::date::timestamp, ($2::date + 1)::timestamp, '[)')
+                  and ($3::uuid is null or b.venue_id = $3) and b.status = any($4::text[])) bs
+         join public.bookings bb on bb.id = bs.id
+         cross join lateral unnest(bb.slot) with ordinality as d(piece, n)
+        where d.piece && tsrange($1::date::timestamp, ($2::date + 1)::timestamp, '[)')
+        order by d.piece`,
       [...range, q.statuses],
     );
     for (const r of rows) {
       const item = toAdminListItem(r, campus.localNow);
       events.push({
-        id: `booking:${r.id}`,
+        id: `booking:${r.id}:${r.day_no}`,
         kind: 'booking',
         bookingId: r.id,
         reference: r.reference,
-        status: r.status,
-        title: `${r.venue_name} · ${r.requester_name}`,
-        start: item.start,
-        end: item.end,
+        status: item.status,
+        title: `${r.venue_name} · ${r.requester_name}${item.days > 1 ? ` (day ${r.day_no} of ${item.days})` : ''}`,
+        start: toLdt(r.day_start),
+        end: toLdt(r.day_end),
         venue: { id: r.venue_id, name: r.venue_name },
         requester: { id: r.requester_id, fullName: r.requester_name, role: r.requester_role },
         purpose: r.purpose,

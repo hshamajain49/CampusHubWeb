@@ -11,12 +11,15 @@ export const QUEUE_POSITION_SQL = `case when b.status = 'queued' then 1 + (
      where q.venue_id = b.venue_id and q.status = 'queued' and q.slot && b.slot
        and (q.queued_at, q.id) < (b.queued_at, b.id)) end`;
 
-/** Upcoming = confirmed and not ended, or queued and not started (SQL over a row aliased b; `now` is a timestamp expression). */
+/**
+ * Upcoming = confirmed and its last day not ended, or queued and its first day not started (SQL over a row aliased b;
+ * `now` is a timestamp expression).
+ */
 export const UPCOMING_SQL = (now: string) =>
-  `((b.status = 'confirmed' and (b.booking_date + b.end_time) > ${now}) or (b.status = 'queued' and (b.booking_date + b.start_time) > ${now}))`;
+  `((b.status = 'confirmed' and (b.end_date + b.end_time) > ${now}) or (b.status = 'queued' and (b.booking_date + b.start_time) > ${now}))`;
 
 export const BOOKING_SELECT = `
-  select b.id, b.reference, b.venue_id, b.requester_id, b.booking_date as date,
+  select b.id, b.reference, b.venue_id, b.requester_id, b.booking_date as date, b.end_date,
          to_char(b.start_time, 'HH24:MI') as start_time, to_char(b.end_time, 'HH24:MI') as end_time,
          b.purpose, b.expected_attendees, b.id_number, b.status, b.cancellation_reason,
          b.confirmed_at, b.queued_at, b.cancelled_by, b.cancelled_at, b.version, b.created_at, b.updated_at,
@@ -67,40 +70,47 @@ export interface ConflictResult {
   queueLength: number;
 }
 
-/** Confirmed bookings, the actor's own active bookings, queued requests and blocks overlapping [date+start, date+end). */
+/**
+ * Confirmed bookings, the actor's own active bookings, queued requests and blocks overlapping the requested time:
+ * [start, end) on every day from date to endDate. Bookings come back as the overlapping day pieces.
+ */
 export async function findConflicts(
   db: DbClient,
   venueId: string,
-  date: string,
-  start: string,
-  end: string,
+  slot: { date: string; endDate?: string | null; startTime: string; endTime: string },
   actorId: string,
   excludeBookingId: string | null = null,
 ): Promise<ConflictResult> {
   const { rows } = await db.query(
-    `with r as (select tsrange($2::date + $3::time, $2::date + $4::time, '[)') as rng)
-     select 'booking' as source, b.id, b.status, b.reference, lower(b.slot)::text as start_at, upper(b.slot)::text as end_at,
-            (b.requester_id = $5) as is_mine, null::text as block_type, null::text as reason
-       from public.bookings b, r
-      where b.venue_id = $1 and b.status in ('confirmed', 'queued') and b.slot && r.rng
-        and ($6::uuid is null or b.id <> $6::uuid)
+    `with r as (select public.booking_slot($2::date, $3::date, $4::time, $5::time) as rng)
+     select 'booking' as source, b.id, b.status, b.reference, lower(s.piece)::text as start_at, upper(s.piece)::text as end_at,
+            (b.requester_id = $6) as is_mine, null::text as block_type, null::text as reason
+       from public.bookings b cross join r cross join lateral unnest(b.slot) as s(piece)
+      where b.venue_id = $1 and b.status in ('confirmed', 'queued') and b.slot && r.rng and s.piece && r.rng
+        and ($7::uuid is null or b.id <> $7::uuid)
      union all
      select 'block', vb.id, null, null, vb.starts_at::text, vb.ends_at::text, false, vb.block_type, vb.reason
        from public.venue_blocks vb, r
       where vb.venue_id = $1 and vb.period && r.rng
       order by 5`,
-    [venueId, date, start, end, actorId, excludeBookingId],
+    [venueId, slot.date, slot.endDate || slot.date, slot.startTime, slot.endTime, actorId, excludeBookingId],
   );
   const out: ConflictResult = { blocks: [], bookings: [], own: [], queueLength: 0 };
+  const seenOwn = new Set<string>();
+  const queued = new Set<string>();
   for (const r of rows) {
     if (r.source === 'block') {
       out.blocks.push({ id: r.id, blockType: r.block_type, reason: r.reason, start: ldt(r.start_at), end: ldt(r.end_at) });
       continue;
     }
-    if (r.is_mine) out.own.push({ id: r.id, status: r.status, reference: r.reference });
-    if (r.status === 'queued') out.queueLength++;
+    if (r.is_mine && !seenOwn.has(r.id)) {
+      seenOwn.add(r.id);
+      out.own.push({ id: r.id, status: r.status, reference: r.reference });
+    }
+    if (r.status === 'queued') queued.add(r.id);
     else out.bookings.push(bookingInterval('confirmed', ldt(r.start_at), ldt(r.end_at), r.is_mine, r.id));
   }
+  out.queueLength = queued.size;
   return out;
 }
 

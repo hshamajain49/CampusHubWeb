@@ -46,7 +46,7 @@ export function useAvailability(id: string | undefined, from: string | undefined
 /** Debounced, non-binding live check (E10); superseded requests are aborted by TanStack's signal. */
 export function useAvailabilityCheck(
   id: string | undefined,
-  slot: { date: string; startTime: string; endTime: string; excludeBookingId?: string } | null,
+  slot: { date: string; endDate?: string; startTime: string; endTime: string; excludeBookingId?: string } | null,
 ) {
   return useQuery({
     queryKey: ['venue', id, 'check', slot],

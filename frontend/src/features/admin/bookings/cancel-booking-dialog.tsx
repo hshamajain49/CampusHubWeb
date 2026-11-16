@@ -5,13 +5,14 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { diffDays, type AdminBookingListItem } from '@campushub/shared';
 import { ApiError } from '@/lib/api-client';
-import { formatDuration, formatLongDate, formatTimeRange, formatNumber } from '@/lib/format';
+
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { Field } from '@/components/common/form-field';
 import { RoleBadge, StatusBadge } from '@/components/common/badges';
 import { invalidateBookingViews, useAdminCancel } from '../api';
+import { formatBookingWhen, formatDuration, formatNumber } from '@/lib/format';
 
 export function StartsInChip({ date, today, className }: { date: string; today?: string; className?: string }) {
   if (!today) return null;
@@ -33,7 +34,7 @@ export function StartsInChip({ date, today, className }: { date: string; today?:
 function Summary({ b }: { b: AdminBookingListItem }) {
   const rows = [
     ['Venue', b.venue.name],
-    ['When', `${formatLongDate(b.date)} · ${formatTimeRange(b.startTime, b.endTime)} (${formatDuration(b.durationMinutes)})`],
+    ['When', `${formatBookingWhen(b)} (${formatDuration(b.durationMinutes)}${b.days > 1 ? ' a day' : ''})`],
     ['Attendees', b.expectedAttendees ? `${formatNumber(b.expectedAttendees)} of ${formatNumber(b.venue.capacity)}` : `Not specified (capacity ${formatNumber(b.venue.capacity)})`],
     ...(b.idNumber ? [['ID', b.idNumber]] : []),
   ];

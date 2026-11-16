@@ -29,6 +29,23 @@ export function formatTimeRange(start: string, end: string): string {
   return `${start.slice(0, 5)} – ${end.slice(0, 5)}`;
 }
 
+/** A booking's day(s): "20 Nov 2026", or for several days "20 – 22 Nov 2026". */
+export function formatBookingDates(b: { date: string; endDate?: string | null }): string {
+  return b.endDate && b.endDate !== b.date ? formatDateRange(b.date, b.endDate) : formatDate(b.date);
+}
+
+/** Detail pages: "Friday, 20 Nov 2026", or "Friday, 20 Nov 2026 – Sunday, 22 Nov 2026 (3 days)". */
+export function formatBookingLongDates(b: { date: string; endDate?: string | null; days?: number }): string {
+  if (!b.endDate || b.endDate === b.date) return formatLongDate(b.date);
+  return `${formatLongDate(b.date)} – ${formatLongDate(b.endDate)}${b.days ? ` (${b.days} days)` : ''}`;
+}
+
+/** "20 Nov 2026 · 10:00 – 12:00", or "20 – 22 Nov 2026 · 10:00 – 12:00 daily" for several days. */
+export function formatBookingWhen(b: { date: string; endDate?: string | null; startTime: string; endTime: string }): string {
+  const multi = !!b.endDate && b.endDate !== b.date;
+  return `${formatBookingDates(b)} · ${formatTimeRange(b.startTime, b.endTime)}${multi ? ' daily' : ''}`;
+}
+
 /** Instant (ISO with Z) → 'd MMM yyyy · HH:mm' in campus time. */
 export function formatTimestamp(iso: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-GB', {

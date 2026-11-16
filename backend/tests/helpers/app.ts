@@ -76,7 +76,7 @@ export function as(token: string) {
     get: (p: string) => auth(request(app).get(`/api/v1${p}`)),
     post: (p: string, body?: object) => auth(request(app).post(`/api/v1${p}`)).send(body ?? {}),
     patch: (p: string, body: object) => auth(request(app).patch(`/api/v1${p}`)).send(body),
-    delete: (p: string) => auth(request(app).delete(`/api/v1${p}`)),
+    delete: (p: string, body?: object) => (body ? auth(request(app).delete(`/api/v1${p}`)).send(body) : auth(request(app).delete(`/api/v1${p}`))),
     /** multipart/form-data: a JSON "data" part plus photo files (complaints C02, C12, C19). */
     multipart: (p: string, data: object, photos: { buffer: Buffer; name: string }[] = [], headers: Record<string, string> = {}) => {
       let r = auth(request(app).post(`/api/v1${p}`)).field('data', JSON.stringify(data));

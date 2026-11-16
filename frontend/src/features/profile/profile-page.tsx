@@ -21,6 +21,7 @@ import { RoleBadge } from '@/components/common/badges';
 import { UserAvatar } from '@/components/common/small';
 import { PasswordInput } from '@/features/auth/password-input';
 import { changePasswordForm, submitPasswordChange, type ChangePasswordValues } from '@/features/auth/change-password-page';
+import { DeleteAccountCard } from './delete-account';
 
 function useUpdateMe() {
   const qc = useQueryClient();
@@ -235,7 +236,7 @@ export function ProfilePage() {
         <SectionCard title="Session">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[13px] text-muted">
-              To change your email, contact the administrator. Need to change your email or close your account? Contact the administrator
+              Need to change your email? Contact the administrator
               {settings?.supportEmail ? (
                 <>
                   {' at '}
@@ -251,6 +252,7 @@ export function ProfilePage() {
             </Button>
           </div>
         </SectionCard>
+        <DeleteAccountCard />
       </div>
     </div>
   );

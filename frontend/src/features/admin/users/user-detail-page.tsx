@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { Info, KeyRound, Power, PowerOff, Save } from 'lucide-react';
 import { departmentSchema, fullNameSchema, type UserDetail } from '@campushub/shared';
 import { isApiError } from '@/lib/api-client';
-import { formatDate, formatTimeRange, formatTimestamp } from '@/lib/format';
+
 import { useDocumentTitle } from '@/hooks/misc';
 import { usePublicSettings } from '@/hooks/use-public-settings';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { useAdminBreadcrumb } from '@/layouts/admin-layout';
 import { useUser, useUserMutations } from '../api';
 import { useServiceDepartments } from '@/features/complaints/api';
+import { formatBookingWhen, formatDate, formatTimestamp } from '@/lib/format';
 
 function RoleForm({ u }: { u: UserDetail }) {
   const m = useUserMutations();
@@ -238,7 +239,7 @@ export default function UserDetailPage() {
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13px] font-semibold text-ink">{b.venue.name}</span>
                         <span className="tabular block text-[12px] text-muted">
-                          <span className="font-mono">{b.reference}</span> · {formatDate(b.date)} · {formatTimeRange(b.startTime, b.endTime)}
+                          <span className="font-mono">{b.reference}</span> · {formatBookingWhen(b)}
                         </span>
                       </span>
                       <StatusBadge status={b.status} size="sm" />

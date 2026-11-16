@@ -7,11 +7,10 @@ import { appError } from '../../errors/app-error.js';
 import type { Actor } from '../../middleware/authenticate.js';
 import { loadCampus } from '../../domain/settings.js';
 import { minutesUntil, startLdt } from '../../domain/booking-rules.js';
-import { publish } from '../notifications/notifier.js';
 import { audit } from '../audit/audit-writer.js';
 import { BOOKING_SELECT, loadHistory } from '../bookings/booking.queries.js';
 import { toAdminBooking, toAdminListItem } from '../bookings/booking.mapper.js';
-import { promoteAndNotify, UPCOMING_SQL } from '../bookings/bookings.service.js';
+import { cancelAndOfferSlot, UPCOMING_SQL } from '../bookings/bookings.service.js';
 import { toCsv } from '../../lib/csv.js';
 import { campusIsoMinute } from '../../lib/format.js';
 
@@ -30,7 +29,7 @@ function applyFilters(w: Where, f: AdminBookingFilters, withStatus = true) {
   if (f.venueId) w.add('b.venue_id = $?', f.venueId);
   if (f.requesterId) w.add('b.requester_id = $?', f.requesterId);
   if (f.role) w.add('p.role = $?', f.role);
-  if (f.dateFrom) w.add('b.booking_date >= $?::date', f.dateFrom);
+  if (f.dateFrom) w.add('b.end_date >= $?::date', f.dateFrom);
   if (f.dateTo) w.add('b.booking_date <= $?::date', f.dateTo);
   if (f.q) {
     const like = w.param(likePattern(f.q));
@@ -98,12 +97,12 @@ export async function exportCsv(f: AdminBookingFilters): Promise<{ csv: string; 
   );
   const tz = campus.settings.campusTimezone;
   const header = [
-    'reference', 'venue', 'building', 'date', 'start_time', 'end_time', 'duration_minutes', 'status', 'requester_name',
+    'reference', 'venue', 'building', 'date', 'end_date', 'start_time', 'end_time', 'duration_minutes', 'status', 'requester_name',
     'requester_email', 'requester_role', 'usn_or_faculty_id', 'department', 'purpose', 'expected_attendees', 'submitted_at',
     'queued_at', 'confirmed_at', 'cancelled_at', 'cancellation_reason',
   ];
   const data = rows.map((r) => [
-    r.reference, r.venue_name, r.building, r.date, r.st, r.et, Math.round(Number(r.duration)), r.status, r.full_name,
+    r.reference, r.venue_name, r.building, r.date, r.end_date, r.st, r.et, Math.round(Number(r.duration)), r.status, r.full_name,
     r.email, r.role, r.id_number, r.department, r.purpose, r.expected_attendees, campusIsoMinute(r.created_at, tz),
     campusIsoMinute(r.queued_at, tz), campusIsoMinute(r.confirmed_at, tz), campusIsoMinute(r.cancelled_at, tz),
     r.cancellation_reason,
@@ -153,7 +152,7 @@ export async function adminCancelBooking(actor: Actor, id: string, body: { reaso
     if (cur.status === 'queued' && minutesUntil(startLdt(cur.date, cur.st), localNow) <= 0) {
       throw appError('CANCELLATION_WINDOW_CLOSED', 'This queued request already expired.');
     }
-    if (cur.status === 'confirmed' && minutesUntil(startLdt(cur.date, cur.et), localNow) <= 0) {
+    if (cur.status === 'confirmed' && minutesUntil(startLdt(cur.end_date, cur.et), localNow) <= 0) {
       throw appError('CANCELLATION_WINDOW_CLOSED', 'This booking has already ended.');
     }
     await tx.query(
@@ -167,13 +166,7 @@ export async function adminCancelBooking(actor: Actor, id: string, body: { reaso
       summary: `Cancelled ${cur.reference}`,
       metadata: { reason: body.reason, previousStatus: cur.status },
     });
-    await publish(tx, {
-      type: 'booking.cancelled',
-      bookingId: id,
-      actorId: actor.id,
-      data: { cancelledBy: 'admin', previousStatus: cur.status, note: body.reason },
-    });
-    if (cur.status === 'confirmed') await promoteAndNotify(tx, venueId, actor.id);
+    await cancelAndOfferSlot(tx, { id, venueId, previousStatus: cur.status, cancelledBy: 'admin', actorId: actor.id, note: body.reason });
   });
   return getAdminBooking(id);
 }

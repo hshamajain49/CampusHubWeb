@@ -1,14 +1,15 @@
 import * as React from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Ban, Bell, BellRing, CircleCheck, CircleX, Inbox, ListOrdered, PartyPopper, PencilLine, TimerOff } from 'lucide-react';
+import { Ban, Bell, BellRing, CalendarCheck, CalendarPlus, CircleCheck, CircleX, Inbox, ListOrdered, PartyPopper, PencilLine, TimerOff } from 'lucide-react';
 import type { NotificationItem as Item, NotificationType } from '@campushub/shared';
 import { cn } from '@/lib/utils';
-import { timeAgo } from '@/lib/format';
+
 import { useIsMdUp } from '@/hooks/misc';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menus';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/controls';
 import { useMarkAllRead, useMarkRead, useNotifications, useUnreadCount } from '@/features/notifications/api';
+import { timeAgo } from '@/lib/format';
 
 const TYPE: Record<NotificationType, { icon: typeof Bell; cls: string }> = {
   booking_confirmed: { icon: CircleCheck, cls: 'bg-success-soft text-success-text' },
@@ -20,6 +21,8 @@ const TYPE: Record<NotificationType, { icon: typeof Bell; cls: string }> = {
   admin_new_booking: { icon: Inbox, cls: 'bg-primary-soft text-primary' },
   admin_request_modified: { icon: PencilLine, cls: 'bg-secondary-soft text-secondary-text' },
   admin_booking_cancelled: { icon: Ban, cls: 'bg-surface-muted text-[#4A5468]' },
+  venue_booked: { icon: CalendarCheck, cls: 'bg-primary-soft text-primary' },
+  venue_available: { icon: CalendarPlus, cls: 'bg-success-soft text-success-text' },
   // written before approvals were retired
   booking_approved: { icon: CircleCheck, cls: 'bg-success-soft text-success-text' },
   booking_rejected: { icon: CircleX, cls: 'bg-destructive-soft text-destructive-text' },

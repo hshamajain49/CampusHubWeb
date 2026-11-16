@@ -28,6 +28,7 @@ const NO: ComplaintPermissions = {
   canReopen: false,
   canRequestReassignment: false,
   canReassign: false,
+  canDismissReassignment: false,
   canClose: false,
 };
 
@@ -189,10 +190,10 @@ describe('CFT-11 reporter reopen of an auto-resolved complaint', () => {
 });
 
 describe('CFT-06 staff actions per status', () => {
-  it('in progress: mark work done and request reassignment; awaiting: disabled waiting button', () => {
+  it('in progress: mark work done and ask to move it; awaiting: disabled waiting button', () => {
     view(complaint({ status: 'in_progress', viewerRole: 'staff', permissions: { ...NO, canComplete: true, canRequestReassignment: true } }), 'staff');
     expect(screen.getAllByRole('button', { name: /Mark work done/ }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('button', { name: /Request reassignment/ }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /Ask to move it/ }).length).toBeGreaterThan(0);
     expect(screen.getByText('Reported by')).toBeInTheDocument();
   });
 

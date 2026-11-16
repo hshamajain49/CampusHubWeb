@@ -15,7 +15,17 @@ const rules: BookingRules = {
   maxActivePerUser: 5,
 };
 const now = '2026-11-09T09:00:00';
-const base = { venueId: 'v1', date: '2026-11-12', startTime: '10:00', endTime: '12:00', purpose: 'Robotics club meet', expectedAttendees: 40, idNumber: '1RV22CS045' };
+const base = {
+  venueId: 'v1',
+  date: '2026-11-12',
+  multiDay: false,
+  endDate: '',
+  startTime: '10:00',
+  endTime: '12:00',
+  purpose: 'Robotics club meet',
+  expectedAttendees: 40,
+  idNumber: '1RV22CS045',
+};
 
 function errors(values: Partial<typeof base> & Record<string, unknown>, capacity = 60) {
   const r = buildBookingFormSchema(rules, capacity, now, 'Seminar Hall A').safeParse({ ...base, ...values });
@@ -57,6 +67,16 @@ describe('booking form schema', () => {
     expect(errors({ idNumber: 'has space' }).idNumber).toMatch(/3–30 letters or digits/);
     const r = buildBookingFormSchema(rules, 60, now).safeParse({ ...base, idNumber: ' fac-1024 ' });
     expect(r.success && r.data.idNumber).toBe('FAC-1024');
+  });
+
+  it('checks the multi-day range', () => {
+    expect(errors({ multiDay: true, endDate: '2026-11-14' })).toEqual({});
+    expect(errors({ multiDay: true, endDate: '' }).endDate).toBe('Pick the last day');
+    expect(errors({ multiDay: true, endDate: '2026-11-12' }).endDate).toBe('The last day must be after the first day.');
+    expect(errors({ multiDay: true, endDate: '2026-11-26' }).endDate).toBe('A booking can cover at most 14 days.');
+    expect(errors({ date: '2027-02-05', multiDay: true, endDate: '2027-02-09' }).endDate).toBe('You can book up to 90 days ahead.');
+    // Off: a leftover end date is ignored.
+    expect(errors({ multiDay: false, endDate: '2026-11-01' })).toEqual({});
   });
 
   it('caps attendees at the venue capacity', () => {

@@ -109,15 +109,15 @@ export async function venueAvailability(venueId: string, actorId: string, q: { f
   // requests. Other members' queued requests stay private.
   const { rows } = await pool.query(
     `with r as (select tsrange($2::date::timestamp, ($3::date + 1)::timestamp, '[)') as rng)
-     select 'booking' as source, b.id, b.status, lower(b.slot)::text as s, upper(b.slot)::text as e,
+     select 'booking' as source, b.id, b.status, lower(d.piece)::text as s, upper(d.piece)::text as e,
             (b.requester_id = $4) as is_mine, null::text as block_type, null::text as reason,
             case when b.status = 'confirmed' then (
               select count(*) from public.bookings q
-               where q.venue_id = b.venue_id and q.status = 'queued' and q.slot && b.slot and lower(q.slot) > $5::timestamp)
+               where q.venue_id = b.venue_id and q.status = 'queued' and q.slot && d.piece and lower(q.slot) > $5::timestamp)
             else 0 end as queue_length,
             ${QUEUE_POSITION_SQL} as queue_position
-       from public.bookings b, r
-      where b.venue_id = $1 and b.slot && r.rng
+       from public.bookings b cross join r cross join lateral unnest(b.slot) as d(piece)
+      where b.venue_id = $1 and b.slot && r.rng and d.piece && r.rng
         and (b.status = 'confirmed' or (b.status = 'queued' and b.requester_id = $4 and lower(b.slot) > $5::timestamp))
      union all
      select 'block', vb.id, null, vb.starts_at::text, vb.ends_at::text, false, vb.block_type, vb.reason, 0, null
@@ -144,7 +144,7 @@ export async function venueAvailability(venueId: string, actorId: string, q: { f
 export async function availabilityCheck(
   venueId: string,
   actorId: string,
-  q: { date: string; startTime: string; endTime: string; excludeBookingId?: string },
+  q: { date: string; endDate?: string; startTime: string; endTime: string; excludeBookingId?: string },
 ): Promise<AvailabilityCheck> {
   await activeVenueRow(venueId);
   const campus = await loadCampus(pool);
@@ -182,7 +182,7 @@ export async function availabilityCheck(
   let taken = false;
   let queuePosition: number | null = null;
   if (q.endTime > q.startTime) {
-    const c = await findConflicts(pool, venueId, q.date, q.startTime, q.endTime, actorId, exclude?.id ?? null);
+    const c = await findConflicts(pool, venueId, q, actorId, exclude?.id ?? null);
     for (const b of c.blocks) conflicts.push(blockInterval(b.blockType, b.reason, b.start, b.end));
     conflicts.push(...c.bookings);
     const own = c.own[0];

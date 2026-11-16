@@ -119,9 +119,12 @@ test('CE2E-02: withdraw while pending; the button is gone once work starts', asy
   const token = await apiToken(STUDENT);
   const cat = await categoryId(token, 'cleanliness');
   const a = await api<{ id: string }>(token, '/complaints', { method: 'POST', body: JSON.stringify({ categoryId: cat, title: `E2E withdraw ${Date.now()}` }) });
-  const b = await api<{ id: string }>(token, '/complaints', { method: 'POST', body: JSON.stringify({ categoryId: cat, title: `E2E started ${Date.now()}` }) });
-  const admin = await apiToken(ADMIN);
-  await api(admin, `/admin/complaints/${b.id}/start`, { method: 'POST', body: JSON.stringify({ version: 1 }) });
+  const b = await api<{ id: string }>(token, '/complaints', {
+    method: 'POST',
+    body: JSON.stringify({ categoryId: await categoryId(token, 'electrical'), title: `E2E started ${Date.now()}` }),
+  });
+  // Only the department starts work (the admin monitors).
+  await api(await apiToken(ELECTRICAL), `/staff/complaints/${b.id}/start`, { method: 'POST', body: JSON.stringify({ version: 1 }) });
 
   const student = await signedIn(browser, STUDENT);
   await student.goto(`/complaints/${a.id}`);
@@ -135,7 +138,7 @@ test('CE2E-02: withdraw while pending; the button is gone once work starts', asy
   await expect(student.getByRole('button', { name: /Withdraw complaint/ })).toHaveCount(0);
 });
 
-test('CE2E-03: staff request reassignment → admin reassigns → it moves from the Electrical to the Plumbing queue', async ({ browser }) => {
+test('CE2E-03: staff ask to move it → the reporter moves it → it goes from the Electrical to the Plumbing queue; the admin only monitors', async ({ browser }) => {
   const token = await apiToken(STUDENT);
   const title = `E2E leak ${Date.now()}`;
   const c = await api<{ id: string; reference: string }>(token, '/complaints', {
@@ -145,26 +148,34 @@ test('CE2E-03: staff request reassignment → admin reassigns → it moves from 
 
   const staff = await signedIn(browser, ELECTRICAL);
   await staff.goto(`/staff/complaints/${c.id}`);
-  await staff.getByRole('button', { name: 'Request reassignment' }).first().click();
+  await staff.getByRole('button', { name: 'Ask to move it' }).first().click();
   const dlg = staff.getByRole('dialog');
   await dlg.getByLabel(/Why doesn't this belong/).fill('This is a water leak, not electrical.');
   await dlg.getByRole('combobox').click();
   await staff.getByRole('option', { name: /^Plumbing/ }).click();
   await dlg.getByRole('button', { name: 'Send request' }).click();
-  await expect(staff.getByText('Reassignment requested.')).toBeVisible();
+  await expect(staff.getByText('Request sent to the reporter.')).toBeVisible();
 
+  // The admin sees the request but has no work or reassignment actions on someone else's complaint.
   const admin = await signedIn(browser, ADMIN, '/admin/login');
-  await admin.goto('/admin/complaints?flag=reassignment');
-  await admin.getByRole('link', { name: c.reference }).click();
-  // Wait for the detail page: on the list, a loose 'Reassign' also matches the "Needs reassignment" filter.
-  await expect(admin).toHaveURL(new RegExp(`/admin/complaints/${c.id}$`));
+  await admin.goto(`/admin/complaints/${c.id}`);
   await expect(admin.getByRole('heading', { name: 'Complaint details', level: 1 })).toBeVisible();
-  await admin.getByRole('button', { name: 'Reassign', exact: true }).first().click();
-  const re = admin.getByRole('dialog');
-  await expect(re.getByRole('combobox')).toContainText('Plumbing'); // pre-filled with the staff suggestion
+  await expect(admin.getByText('Electrical Department asked the reporter to move this')).toBeVisible();
+  for (const name of ['Start work', 'Mark work done', 'Reassign', 'Move to another department', 'Close complaint']) {
+    await expect(admin.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
+
+  // The reporter moves it, pre-filled with the department's suggestion.
+  const student = await signedIn(browser, STUDENT);
+  await student.goto(`/complaints/${c.id}`);
+  await expect(student.getByText('Electrical Department thinks this belongs to another department')).toBeVisible();
+  await student.getByRole('button', { name: 'Move to Plumbing Department' }).click();
+  const re = student.getByRole('dialog');
+  await expect(re.getByRole('combobox')).toContainText('Plumbing');
   await re.getByLabel('Note').fill('Water leak — moved to Plumbing.');
-  await re.getByRole('button', { name: 'Reassign' }).click();
-  await expect(admin.getByText('Moved from Electrical Department to Plumbing Department')).toBeVisible();
+  await re.getByRole('button', { name: 'Move complaint' }).click();
+  await expect(student.getByText('Moved to Plumbing Department.')).toBeVisible();
+  await expect(student.getByText('Moved from Electrical Department to Plumbing Department')).toBeVisible();
 
   await staff.goto(`/staff/complaints/${c.id}`);
   await expect(staff.getByText("This complaint is no longer in your department's queue.")).toBeVisible();

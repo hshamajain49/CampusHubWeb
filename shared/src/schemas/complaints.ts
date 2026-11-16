@@ -118,19 +118,18 @@ export const adminComplaintsQuery = z.object({
 });
 export const adminComplaintsExportQuery = z.object(adminComplaintFilters);
 
-export const adminReassignBody = z
-  .strictObject({
-    version,
-    categoryId: uuid.optional(),
-    dismiss: z.literal(true).optional(),
-    note: reason(500, 'Please add a note (at least 3 characters).'),
-  })
-  .refine((v) => (v.dismiss ? v.categoryId === undefined : v.categoryId !== undefined), {
-    message: 'Choose a new category, or dismiss the request.',
-    path: ['categoryId'],
-  });
+/** The reporter moves their complaint to another category, and with it another department. */
+export const complaintReassignBody = z.strictObject({
+  version,
+  categoryId: uuid,
+  note: optionalText(500, 'Note'),
+});
 
-export const adminCloseBody = z.strictObject({
+/** The reporter keeps the complaint where it is after a department asked to move it. */
+export const dismissReassignmentBody = z.strictObject({ version, note: optionalText(500, 'Note') });
+
+/** Department staff close duplicates, invalid or out-of-scope complaints. */
+export const closeComplaintBody = z.strictObject({
   version,
   closureType: z.enum(CLOSURE_TYPES, { message: 'Choose a reason type' }),
   reason: reason(500, 'Please explain why (at least 3 characters).'),
@@ -178,8 +177,9 @@ export const complaintIdParam = z.object({ complaintId: uuid });
 export const departmentIdParam = z.object({ departmentId: uuid });
 export const categoryIdParam = z.object({ categoryId: uuid });
 
-export type AdminReassignBody = z.infer<typeof adminReassignBody>;
-export type AdminCloseBody = z.infer<typeof adminCloseBody>;
+export type ComplaintReassignBody = z.infer<typeof complaintReassignBody>;
+export type DismissReassignmentBody = z.infer<typeof dismissReassignmentBody>;
+export type CloseComplaintBody = z.infer<typeof closeComplaintBody>;
 export type DepartmentCreateBody = z.infer<typeof departmentCreateBody>;
 export type DepartmentUpdateBody = z.infer<typeof departmentUpdateBody>;
 export type CategoryCreateBody = z.infer<typeof categoryCreateBody>;

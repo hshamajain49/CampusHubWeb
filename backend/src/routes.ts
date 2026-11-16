@@ -3,10 +3,17 @@ import { Router, type Express, type RequestHandler } from 'express';
 import {
   MEMBER_ROLES,
   ROLES,
-  adminCloseBody,
+  adminSuggestionsQuery,
+  closeComplaintBody,
+  complaintReassignBody,
+  deleteAccountBody,
+  dismissReassignmentBody,
+  mySuggestionsQuery,
+  suggestionCreateBody,
+  suggestionIdParam,
+  suggestionReviewBody,
   adminComplaintsExportQuery,
   adminComplaintsQuery,
-  adminReassignBody,
   categoryCreateBody,
   categoryIdParam,
   categoryUpdateBody,
@@ -92,11 +99,15 @@ import * as staff from './modules/staff-complaints/staff-complaints.service.js';
 import * as adminComplaints from './modules/admin-complaints/admin-complaints.service.js';
 import * as complaintSetup from './modules/complaint-setup/complaint-setup.service.js';
 import * as complaintReports from './modules/complaint-reports/complaint-reports.service.js';
+import * as suggestions from './modules/suggestions/suggestions.service.js';
+import { deleteOwnAccount } from './modules/account/account-deletion.service.js';
 
 /** Members (student, faculty_staff, department_staff) use venues and bookings (COMPLAINT_REGISTRATION_SPEC.md CD-02). */
 const MEMBERS: Role[] = [...MEMBER_ROLES];
 const STAFF: Role[] = ['department_staff'];
 const ADMINS: Role[] = ['super_admin'];
+/** Who can book venues: every member, and the Super Admin for their own events (from the admin area). */
+const BOOKERS: Role[] = [...MEMBER_ROLES, 'super_admin'];
 const ANY: Role[] = [...ROLES];
 
 /** K2: opportunistic expiry after authenticated responses (at most once a minute). */
@@ -145,6 +156,10 @@ function meRouter() {
     await me.changePassword(req.profile!.id, req.auth!.sessionId, req.valid.body);
     res.status(204).end();
   });
+  // Permanent account deletion (password + typed DELETE); the last Super Admin is refused (docs/ACCOUNTS.md).
+  r.delete('/', limits.changePassword, validate({ body: deleteAccountBody }), async (req, res) => {
+    res.json({ data: await deleteOwnAccount(req.profile!, req.valid.body) });
+  });
   const fresh = guard({ roles: MEMBERS }).slice(3);
   r.get('/dashboard', ...fresh, async (req, res) => {
     res.json({ data: await bookings.memberDashboard(req.profile!.id) });
@@ -190,7 +205,7 @@ function realtimeRouter() {
 // ───────────────────────────── member: venues + bookings ─────────────────────────────
 function venuesRouter() {
   const r = Router();
-  r.use(...guard({ roles: MEMBERS }), opportunisticExpiry);
+  r.use(...guard({ roles: BOOKERS }), opportunisticExpiry);
   r.get('/', validate({ query: venueListQuery }), async (req, res) => void res.json(await venues.listActiveVenues(req.valid.query)));
   r.get('/:venueId', validate({ params: venueIdParam }), async (req, res) => {
     res.json({ data: await venues.getActiveVenue(req.valid.params.venueId) });
@@ -213,7 +228,7 @@ const idempotencyKey = z.guid().optional();
 
 function bookingsRouter() {
   const r = Router();
-  r.use(...guard({ roles: MEMBERS }), opportunisticExpiry);
+  r.use(...guard({ roles: BOOKERS }), opportunisticExpiry);
   r.post('/', limits.bookingWrites, validate({ body: bookingCreateBody }), async (req, res) => {
     const key = idempotencyKey.safeParse(req.get('idempotency-key') || undefined);
     if (!key.success) throw appError('VALIDATION_ERROR', 'Idempotency-Key must be a UUID', { fieldErrors: {}, formErrors: [] });
@@ -286,6 +301,29 @@ function complaintsRouter() {
   r.post('/:complaintId/reopen', limits.complaintActions, validate({ params: complaintIdParam, body: complaintReporterReopenBody }), async (req, res) => {
     res.json({ data: await complaints.reporterReopenComplaint(actorOf(req), req.valid.params.complaintId, req.valid.body) });
   });
+  // The reporter decides where the complaint belongs (no admin step).
+  r.post('/:complaintId/reassign', limits.complaintActions, validate({ params: complaintIdParam, body: complaintReassignBody }), async (req, res) => {
+    res.json({ data: await complaints.reassignComplaint(actorOf(req), req.valid.params.complaintId, req.valid.body) });
+  });
+  r.post(
+    '/:complaintId/dismiss-reassignment',
+    limits.complaintActions,
+    validate({ params: complaintIdParam, body: dismissReassignmentBody }),
+    async (req, res) => {
+      res.json({ data: await complaints.dismissReassignment(actorOf(req), req.valid.params.complaintId, req.valid.body) });
+    },
+  );
+  return r;
+}
+
+// ───────────────────────────── suggestion box (any signed-in user) ─────────────────────────────
+function suggestionsRouter() {
+  const r = Router();
+  r.use(...guard({ roles: ANY }));
+  r.post('/', limits.complaintCreate, validate({ body: suggestionCreateBody }), async (req, res) => {
+    res.status(201).json({ data: await suggestions.createSuggestion(actorOf(req), req.valid.body) });
+  });
+  r.get('/', validate({ query: mySuggestionsQuery }), async (req, res) => void res.json(await suggestions.listMySuggestions(req.profile!.id, req.valid.query)));
   return r;
 }
 
@@ -331,6 +369,10 @@ function staffRouter() {
       await reply(req, res);
     },
   );
+  r.post('/complaints/:complaintId/close', limits.complaintActions, validate({ params: complaintIdParam, body: closeComplaintBody }), async (req, res) => {
+    await staff.closeComplaint(actorOf(req), scope(req), req.valid.params.complaintId, req.valid.body);
+    await reply(req, res);
+  });
   return r;
 }
 
@@ -433,31 +475,13 @@ function adminRouter() {
   });
   const adminDetail = async (req: Req, res: Res) =>
     void res.json({ data: await adminComplaints.getAdminComplaint(actorOf(req), req.valid.params.complaintId) });
+  // Monitoring only: the department manages the work and the reporter decides where it belongs. An admin acts on a
+  // complaint only as its reporter, through the reporter endpoints (/complaints/:id/...).
   r.get('/complaints/:complaintId', validate({ params: complaintIdParam }), adminDetail);
-  r.post('/complaints/:complaintId/start', validate({ params: complaintIdParam, body: staffNoteBody }), async (req, res) => {
-    await staff.startWork(actorOf(req), { kind: 'admin' }, req.valid.params.complaintId, req.valid.body);
-    await adminDetail(req, res);
-  });
-  r.post(
-    '/complaints/:complaintId/complete',
-    limits.workComplete,
-    validate({ params: complaintIdParam }),
-    uploadPhotos,
-    validate({ body: completeWorkData }),
-    async (req, res) => {
-      await staff.completeWork(actorOf(req), { kind: 'admin' }, req.valid.params.complaintId, req.valid.body, photosOf(req));
-      await adminDetail(req, res);
-    },
-  );
-  r.post('/complaints/:complaintId/reopen', validate({ params: complaintIdParam, body: staffNoteBody }), async (req, res) => {
-    await staff.reopenWork(actorOf(req), { kind: 'admin' }, req.valid.params.complaintId, req.valid.body);
-    await adminDetail(req, res);
-  });
-  r.post('/complaints/:complaintId/reassign', validate({ params: complaintIdParam, body: adminReassignBody }), async (req, res) => {
-    res.json({ data: await adminComplaints.reassignComplaint(actorOf(req), req.valid.params.complaintId, req.valid.body) });
-  });
-  r.post('/complaints/:complaintId/close', validate({ params: complaintIdParam, body: adminCloseBody }), async (req, res) => {
-    res.json({ data: await adminComplaints.closeComplaint(actorOf(req), req.valid.params.complaintId, req.valid.body) });
+
+  r.get('/suggestions', validate({ query: adminSuggestionsQuery }), async (req, res) => void res.json(await suggestions.listAdminSuggestions(req.valid.query)));
+  r.patch('/suggestions/:suggestionId', validate({ params: suggestionIdParam, body: suggestionReviewBody }), async (req, res) => {
+    res.json({ data: await suggestions.reviewSuggestion(actorOf(req), req.valid.params.suggestionId, req.valid.body) });
   });
   r.get('/service-departments', async (_req, res) => void res.json({ data: await complaintSetup.listDepartments() }));
   r.post('/service-departments', validate({ body: departmentCreateBody }), async (req, res) => {
@@ -497,8 +521,9 @@ export function mountRoutes(app: Express) {
     { path: '/api/v1/me', router: meRouter(), roles: ANY },
     { path: '/api/v1/notifications', router: notificationsRouter(), roles: ANY },
     { path: '/api/v1/realtime', router: realtimeRouter(), roles: ANY },
-    { path: '/api/v1/venues', router: venuesRouter(), roles: MEMBERS },
-    { path: '/api/v1/bookings', router: bookingsRouter(), roles: MEMBERS },
+    { path: '/api/v1/venues', router: venuesRouter(), roles: BOOKERS },
+    { path: '/api/v1/bookings', router: bookingsRouter(), roles: BOOKERS },
+    { path: '/api/v1/suggestions', router: suggestionsRouter(), roles: ANY },
     { path: '/api/v1/complaint-categories', router: complaintCategoriesRouter(), roles: ANY },
     { path: '/api/v1/complaints', router: complaintsRouter(), roles: ANY },
     { path: '/api/v1/staff', router: staffRouter(), roles: STAFF },

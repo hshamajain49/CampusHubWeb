@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, Construction } from 'lucide-react';
 import { BLOCK_TYPES, BLOCK_TYPE_LABELS, addDays, buildTimeOptions, type BlockConflict, type BlockType, type VenueBlock } from '@campushub/shared';
 import { ApiError } from '@/lib/api-client';
-import { formatShortDay, formatTimeRange } from '@/lib/format';
+import { formatBookingWhen } from '@/lib/format';
 import { useCampusNow } from '@/hooks/use-public-settings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -147,7 +147,7 @@ export function BlockDialog({
                       <span className="font-mono">{c.reference}</span> · {c.requester.fullName}
                     </p>
                     <p className="tabular text-[12.5px] text-muted">
-                      {formatShortDay(c.date)} · {formatTimeRange(c.startTime, c.endTime)}
+                      {formatBookingWhen(c)}
                     </p>
                   </div>
                   <StatusBadge status={c.status} size="sm" />

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Link, useLocation } from 'react-router';
-import { CalendarDays, CalendarPlus, Inbox, LayoutDashboard, LogOut, Megaphone, Menu, UserRound, Building2 } from 'lucide-react';
+import { CalendarDays, CalendarPlus, Inbox, LayoutDashboard, Lightbulb, LogOut, Megaphone, Menu, UserRound, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth, useMe } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
@@ -136,7 +136,7 @@ export function UserLayout() {
             </Button>
             <NotificationBell allPath="/notifications" />
             <div className="hidden md:block">
-              <UserMenu me={me} profilePath="/profile" showName={false} />
+              <UserMenu me={me} profilePath="/profile" suggestionsPath="/suggestions" showName={false} />
             </div>
           </div>
         </div>
@@ -159,7 +159,11 @@ export function UserLayout() {
               </div>
             </div>
             <nav aria-label="Main" className="grid gap-1">
-              {[...nav, { to: '/profile', label: 'Profile', icon: UserRound, match: (p: string) => p === '/profile' } as NavItem].map((n) => {
+              {[
+                ...nav,
+                { to: '/suggestions', label: 'Suggestion box', icon: Lightbulb, match: (p: string) => p === '/suggestions' } as NavItem,
+                { to: '/profile', label: 'Profile', icon: UserRound, match: (p: string) => p === '/profile' } as NavItem,
+              ].map((n) => {
                 const active = n.match(pathname);
                 const Icon = n.icon;
                 return (

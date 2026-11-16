@@ -3,8 +3,9 @@ import { format, parseISO } from 'date-fns';
 import { Clock } from 'lucide-react';
 import { diffDays, type BookingSummary } from '@campushub/shared';
 import { cn } from '@/lib/utils';
-import { formatDate, formatTimeRange } from '@/lib/format';
+
 import { StatusBadge } from './badges';
+import { formatBookingDates, formatTimeRange } from '@/lib/format';
 
 /** Calendar-page date block: month abbreviation over day number (§19.6). */
 export function BookingDateBlock({ date, className, muted = false }: { date: string; className?: string; muted?: boolean }) {
@@ -66,8 +67,14 @@ export function BookingCard({
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <span className="tabular inline-flex flex-wrap items-center gap-x-1 text-[12.5px] font-medium text-ink">
             <Clock className="size-3.5 text-muted" aria-hidden />
-            <span className="whitespace-nowrap">{formatDate(booking.date)} ·</span>
-            <span className="whitespace-nowrap">{formatTimeRange(booking.startTime, booking.endTime)}</span>
+            <span className="whitespace-nowrap">{formatBookingDates(booking)} ·</span>
+            <span className="whitespace-nowrap">
+              {formatTimeRange(booking.startTime, booking.endTime)}
+              {booking.days > 1 ? ' daily' : ''}
+            </span>
+            {booking.days > 1 && (
+              <span className="chip whitespace-nowrap rounded-full bg-primary-soft px-1.5 py-px text-[11px] font-semibold text-primary">{booking.days} days</span>
+            )}
           </span>
           <TimingChip booking={booking} today={today} />
         </div>

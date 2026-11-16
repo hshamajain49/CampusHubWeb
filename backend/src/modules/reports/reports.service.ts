@@ -11,7 +11,10 @@ export async function reportSummary(q: { from?: string; to?: string; venueId?: s
   const to = q.to ?? campus.today;
   const from = q.from ?? addDays(to, -29);
   const venue = q.venueId ?? null;
-  const base = `from public.bookings b where b.booking_date between $1::date and $2::date and ($3::uuid is null or b.venue_id = $3)`;
+  // A booking is in range when any of its days is; hours and day counts only include the days inside the range.
+  const OVERLAP = `b.booking_date <= $2::date and b.end_date >= $1::date`;
+  const DAYS_IN_RANGE = `(least(b.end_date, $2::date) - greatest(b.booking_date, $1::date) + 1)`;
+  const base = `from public.bookings b where ${OVERLAP} and ($3::uuid is null or b.venue_id = $3)`;
   const params = [from, to, venue];
 
   const BOOKED = `b.status in ('confirmed','completed')`;
@@ -28,16 +31,16 @@ export async function reportSummary(q: { from?: string; to?: string; venueId?: s
               count(*) filter (where b.queued_at is not null and b.confirmed_at is not null) as promoted,
               coalesce(avg(extract(epoch from (b.confirmed_at - b.queued_at)) / 3600)
                 filter (where b.queued_at is not null and b.confirmed_at is not null), 0) as avg_wait_hours,
-              coalesce(sum(extract(epoch from (b.end_time - b.start_time)) / 3600) filter (where ${BOOKED}), 0) as booked_hours
+              coalesce(sum(extract(epoch from (b.end_time - b.start_time)) / 3600 * ${DAYS_IN_RANGE}) filter (where ${BOOKED}), 0) as booked_hours
          ${base}`,
       params,
     ),
     pool.query(
       `select v.id, v.name, count(b.id) as requests,
               count(b.id) filter (where ${BOOKED}) as booked,
-              coalesce(sum(extract(epoch from (b.end_time - b.start_time)) / 60) filter (where ${BOOKED}), 0) as booked_minutes
+              coalesce(sum(extract(epoch from (b.end_time - b.start_time)) / 60 * ${DAYS_IN_RANGE}) filter (where ${BOOKED}), 0) as booked_minutes
          from public.venues v
-         left join public.bookings b on b.venue_id = v.id and b.booking_date between $1::date and $2::date
+         left join public.bookings b on b.venue_id = v.id and ${OVERLAP}
         where ($3::uuid is null or v.id = $3)
         group by v.id, v.name
        having count(b.id) > 0 or v.is_active
@@ -47,13 +50,23 @@ export async function reportSummary(q: { from?: string; to?: string; venueId?: s
     pool.query(
       `select p.role, count(*) as requests, count(*) filter (where ${BOOKED}) as booked
          from public.bookings b join public.profiles p on p.id = b.requester_id
-        where b.booking_date between $1::date and $2::date and ($3::uuid is null or b.venue_id = $3)
+        where ${OVERLAP} and ($3::uuid is null or b.venue_id = $3)
           and p.role in ('student','faculty_staff','department_staff')
         group by p.role`,
       params,
     ),
-    pool.query(`select extract(isodow from b.booking_date)::int as dow, count(*) as booked ${base} and ${BOOKED} group by 1`, params),
-    pool.query(`select extract(hour from b.start_time)::int as hour, count(*) as booked ${base} and ${BOOKED} group by 1`, params),
+    // Weekday and hour count booked days (a three-day booking counts on each of its days).
+    pool.query(
+      `select extract(isodow from d)::int as dow, count(*) as booked
+         from public.bookings b
+         cross join lateral generate_series(greatest(b.booking_date, $1::date), least(b.end_date, $2::date), interval '1 day') as d
+        where ${OVERLAP} and ($3::uuid is null or b.venue_id = $3) and ${BOOKED} group by 1`,
+      params,
+    ),
+    pool.query(
+      `select extract(hour from b.start_time)::int as hour, sum(${DAYS_IN_RANGE})::int as booked ${base} and ${BOOKED} group by 1`,
+      params,
+    ),
     pool.query(
       `select (b.created_at at time zone $4)::date::text as day, count(*) as n
          from public.bookings b

@@ -21,8 +21,11 @@ const NONE: ComplaintPermissions = {
   canReopen: false,
   canRequestReassignment: false,
   canReassign: false,
+  canDismissReassignment: false,
   canClose: false,
 };
+
+const MOVABLE = (s: ComplaintStatus) => s === 'pending_review' || s === 'in_progress';
 
 /** When the hourly job will resolve an awaiting complaint (null when off or not awaiting). */
 export function autoResolveAt(c: ComplaintState, autoResolveDays: number | null): Date | null {
@@ -44,34 +47,28 @@ export function reporterPermissions(c: ComplaintState, reopenWindowDays: number,
     canReject: c.status === 'awaiting_confirmation',
     canWithdraw: c.status === 'pending_review',
     canReopen: !!until && now < until,
+    // The reporter decides where the complaint belongs: move it, or keep it after a department asked to move it.
+    canReassign: MOVABLE(c.status),
+    canDismissReassignment: c.reassignmentRequested && MOVABLE(c.status),
   };
 }
 
-/** Staff of the assigned department (CB-09, CB-10, CB-14). */
+/** Staff of the assigned department manage the work: start, done, reopen, ask to move it, close (CB-09, CB-10, CB-14). */
 export function staffPermissions(c: ComplaintState): ComplaintPermissions {
   return {
     ...NONE,
     canStart: c.status === 'pending_review',
     canComplete: c.status === 'in_progress',
     canReopen: c.status === 'resolved',
-    canRequestReassignment: (c.status === 'pending_review' || c.status === 'in_progress') && !c.reassignmentRequested,
+    canRequestReassignment: MOVABLE(c.status) && !c.reassignmentRequested,
+    canClose: MOVABLE(c.status),
   };
 }
 
 /**
- * Super Admin: staff actions for any department plus reassign (CB-13) and close (CB-15). When the admin is also the
- * reporter (CEC-24) the reporter's approve/reject/withdraw flags are added; canReopen keeps the admin meaning (§11.1).
+ * Super Admin: monitors status and progress only; the department manages the work and the reporter decides where it
+ * belongs. On a complaint the admin filed themselves, they have the reporter's actions like anyone else.
  */
-export function adminPermissions(c: ComplaintState, isReporter: boolean): ComplaintPermissions {
-  const staff = staffPermissions(c);
-  const reporter = isReporter ? reporterPermissions(c, 0) : NONE;
-  return {
-    ...staff,
-    canRequestReassignment: false,
-    canApprove: reporter.canApprove,
-    canReject: reporter.canReject,
-    canWithdraw: reporter.canWithdraw,
-    canReassign: c.status === 'pending_review' || c.status === 'in_progress',
-    canClose: c.status === 'pending_review' || c.status === 'in_progress' || c.status === 'awaiting_confirmation',
-  };
+export function adminPermissions(c: ComplaintState, isReporter: boolean, reopenWindowDays = 0): ComplaintPermissions {
+  return isReporter ? reporterPermissions(c, reopenWindowDays) : { ...NONE };
 }

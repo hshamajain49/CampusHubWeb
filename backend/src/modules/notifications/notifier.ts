@@ -25,7 +25,7 @@ interface Hint {
  */
 export async function publish(tx: Tx, event: DomainEvent): Promise<string[]> {
   const { rows } = await tx.query(
-    `select b.id, b.reference, b.venue_id, b.requester_id, b.status, b.booking_date as date,
+    `select b.id, b.reference, b.venue_id, b.requester_id, b.status, b.booking_date as date, b.end_date,
             to_char(b.start_time, 'HH24:MI') as start_time, to_char(b.end_time, 'HH24:MI') as end_time,
             v.name as venue_name, p.full_name as requester_name,
             s.email_notifications_enabled, to_char(now() at time zone s.campus_timezone, 'YYYY-MM-DD') as today
@@ -48,6 +48,7 @@ export async function publish(tx: Tx, event: DomainEvent): Promise<string[]> {
       venueName: b.venue_name,
       requesterName: b.requester_name,
       date: b.date,
+      endDate: b.end_date,
       startTime: b.start_time,
       endTime: b.end_time,
       status: b.status,
@@ -57,12 +58,33 @@ export async function publish(tx: Tx, event: DomainEvent): Promise<string[]> {
 
   const ids: string[] = [];
   for (const plan of plans) {
+    if (plan.audience === 'everyone') {
+      // Every active member except the booker and whoever acted, in one statement; in-app only (no email, push or
+      // per-user realtime), so a large campus costs one insert, not thousands of deliveries. It runs after commit,
+      // outside the venue lock: it is informational, and touching every profile inside the booking's critical
+      // section would make concurrent bookings wait on each other.
+      const params = [plan.type, plan.title, plan.body, b.id, b.venue_id, b.requester_id, event.actorId];
+      tx.afterCommit(() =>
+        pool
+          .query(
+            `insert into public.notifications (recipient_id, type, title, body, booking_id, link_path, email_status, push_status)
+             select p.id, $1, $2, $3, $4, '/venues/' || $5::text, 'none', 'none'
+               from public.profiles p
+              where p.is_active and p.role <> 'super_admin' and p.id <> $6 and ($7::uuid is null or p.id <> $7::uuid)
+                and exists (select 1 from public.bookings x where x.id = $4)`,
+            params,
+          )
+          .then(() => undefined)
+          .catch((err) => logger.error({ err, bookingId: b.id, type: plan.type }, 'member announcement failed')),
+      );
+      continue;
+    }
     const recipients = await tx.query(
       plan.audience === 'admins'
-        ? `select p.id, p.email_notifications,
+        ? `select p.id, p.role, p.email_notifications,
                   exists (select 1 from public.push_subscriptions s where s.user_id = p.id) as has_push
              from public.profiles p where p.role = 'super_admin' and p.is_active`
-        : `select p.id, p.email_notifications,
+        : `select p.id, p.role, p.email_notifications,
                   exists (select 1 from public.push_subscriptions s where s.user_id = p.id) as has_push
              from public.profiles p where p.id = $1 and p.is_active`,
       plan.audience === 'admins' ? [] : [b.requester_id],
@@ -71,7 +93,9 @@ export async function publish(tx: Tx, event: DomainEvent): Promise<string[]> {
       if (r.id === event.actorId && !plan.includeActor) continue;
       const emailStatus = plan.email && b.email_notifications_enabled && r.email_notifications ? 'pending' : 'none';
       const pushStatus = plan.push && pushEnabled && r.has_push ? 'pending' : 'none';
-      const linkPath = plan.audience === 'admins' ? `/admin/bookings/${b.id}` : `/bookings/${b.id}`;
+      // A Super Admin who booked for themselves reads their own bookings inside the admin area.
+      const linkPath =
+        plan.audience === 'admins' ? `/admin/bookings/${b.id}` : r.role === 'super_admin' ? `/admin/my-bookings/${b.id}` : `/bookings/${b.id}`;
       const ins = await tx.query<{ id: string }>(
         `insert into public.notifications (recipient_id, type, title, body, booking_id, link_path, email_status, push_status)
          values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,

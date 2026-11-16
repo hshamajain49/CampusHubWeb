@@ -14,6 +14,8 @@ function booking(id: string, v: VenueSummary, purpose: string, extra: Partial<Bo
     reference: 'BK-2026-000123',
     venue: { id: v.id, name: v.name, building: v.building, isActive: true },
     date: '2026-11-20',
+    endDate: '2026-11-20',
+    days: 1,
     startTime: '10:00',
     endTime: '12:00',
     start: '2026-11-20T10:00:00',
@@ -41,6 +43,8 @@ function adminItem(b: BookingSummary, requester: AdminBookingListItem['requester
     venue: { ...b.venue, capacity },
     requester,
     date: b.date,
+    endDate: b.endDate,
+    days: b.days,
     startTime: b.startTime,
     endTime: b.endTime,
     start: b.start,
@@ -91,7 +95,7 @@ const worstVenues = [
   venue('w3', '王秀英多功能厅', 'Konstantin-Oberhauser-Wettstein-Gebäude', { amenities: ['customer-feedback-from-enterprise-onboarding'], capacity: 1284 }),
 ];
 const worstBookings = [
-  booking('wb1', worstVenues[0]!, purpose500, { reference: 'BK-2026-1234567', expectedAttendees: 100000 }),
+  booking('wb1', worstVenues[0]!, purpose500, { reference: 'BK-2026-1234567', expectedAttendees: 100000, endDate: '2026-12-03', days: 14 }),
   booking('wb2', worstVenues[1]!, 'Viv', { status: 'cancelled', queuePosition: null, isUpcoming: false, idNumber: 'EMP/2019/ENG/00042-B', cancellationReason: 'The venue is reserved for university examinations during the entire week, including the reading days before and after.' }),
   booking('wb3', worstVenues[2]!, '<script>alert(1)</script> &amp; **bold**', { status: 'expired', queuePosition: null, isUpcoming: false }),
   booking('wb4', worstVenues[0]!, 'Happening now check', { status: 'confirmed', queuePosition: null, isHappeningNow: true, date: '2026-11-09' }),

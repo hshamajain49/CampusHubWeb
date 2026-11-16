@@ -148,6 +148,25 @@ async function main() {
   await book(rahul, 'Indoor Sports Hall', 4, '16:00', '18:00', 'Inter-department badminton qualifiers', 80, USN.rahul);
   await book(student, 'Seminar Hall A', 8, '14:00', '15:30', 'Study group for the networks mid-term', 25, USN.student, 'confirmed', cancel(student, 'Moved to the library discussion room'));
 
+  // A three-day workshop: one multi-day booking (the same morning window every day).
+  await withTransaction({ actorId: faculty }, async (tx) => {
+    const { rows } = await tx.query<{ id: string }>(
+      `insert into public.bookings (venue_id, requester_id, booking_date, end_date, start_time, end_time, purpose, expected_attendees, id_number, status)
+       values ($1, $2, $3, $4, '09:00', '13:00', $5, 40, $6, 'confirmed') returning id`,
+      [venues['Computer Lab 2'], faculty, addDays(today, 15), addDays(today, 17), 'Three-day data science workshop for faculty', USN.faculty],
+    );
+    await publish(tx, { type: 'booking.confirmed', bookingId: rows[0]!.id, actorId: faculty });
+  });
+
+  // Suggestion box: one new, one already answered.
+  await pool.query(
+    `insert into public.suggestions (author_id, subject, message, status, admin_response, reviewed_by, reviewed_at) values
+       ($1, 'Longer library hours during exams', 'Could the reading room stay open until 22:00 in the two weeks before semester exams?', 'new', null, null, null),
+       ($2, 'Projector remote in Seminar Hall A', 'The projector remote in Seminar Hall A is often missing. A wall-mounted holder would help.', 'reviewed',
+        'Thanks! A holder has been ordered and will be fitted next week.', $3, now())`,
+    [student, ananya, admin],
+  );
+
   // A maintenance block next week on the Main Auditorium
   await pool.query(
     `insert into public.venue_blocks (venue_id, block_type, reason, starts_at, ends_at, created_by)

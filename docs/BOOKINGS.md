@@ -4,7 +4,9 @@ Bookings need **no approval**. The first valid request for a time is confirmed i
 that is already booked joins a queue for it, and the queue is served first-in, first-out when the time frees up. The
 administrator is kept informed (in-app notifications, every booking in the admin views) but never has to act.
 
-Migration: `database/migrations/20261113000100_booking_queue.sql`.
+Migrations: `database/migrations/20261113000100_booking_queue.sql` (instant confirmation, queue) and
+`20261116000100_multiday_suggestions_account_deletion.sql` (multi-day bookings, "venue booked" notifications,
+suggestion box, account deletion).
 
 ## Statuses
 
@@ -37,6 +39,29 @@ never both be confirmed for the same time, whatever the application does. Queued
 
 The form calls the availability check as you pick a time and says which will happen ("confirmed instantly" or
 "you'll join the queue as #N"); the submit button reads **Book now** or **Join the queue**.
+
+## Multi-day bookings
+
+A booking can cover **consecutive days**: turn on **Multiple days** in the form and pick the first and last day. The
+same time window is booked on every day (e.g. 20–22 Nov, 09:00–13:00 each day).
+
+- Up to **14 days** (`MAX_BOOKING_DAYS`, `TOO_MANY_DAYS`), all inside the advance window. Every day must satisfy the
+  usual rules (hours, steps, duration); the lead time applies to the first day.
+- **All or nothing.** The booking is confirmed only if every day is free; if any day is already booked, the whole
+  booking joins the queue, and it is confirmed automatically once every day is free. A block on any day stops it.
+- Stored as one row: `end_date` (inclusive, equal to `date` for one day) and a generated `slot` that is a
+  `tsmultirange` with one range per day, so `bookings_no_overlap` still compares confirmed bookings day by day
+  (`public.booking_slot(start, end, from, to)`).
+- Editing: moving the first day keeps the number of days; the last day can be changed or multi-day turned off. A
+  multi-day booking is "happening now" during its window on any of its days and completes after its last day.
+- Lists, the admin calendar (one event per day, "day n of N"), reports (hours × days in range), the confirmation PDF
+  and notifications all show the date range ("20 Nov – 22 Nov · 09:00–13:00 daily").
+
+## Super Admin bookings
+
+The Super Admin books venues like a member, from the admin area: **Dashboard → Book a venue**, **Venues → (venue) →
+Book**, and **Bookings → My bookings** (`/admin/book`, `/admin/my-bookings`). The same rules, queue and limits apply.
+The admin booking pages reuse the member pages (`features/bookings/paths.ts` switches the links under `/admin`).
 
 ## The queue (FIFO)
 
@@ -72,16 +97,24 @@ a minute while it serves requests, and reads always show the settled status.
 
 ## Notifications
 
-| Event | Member | Admins |
-|---|---|---|
-| Booked, confirmed | "Booking confirmed" (in-app + email) | "New booking" (in-app) |
-| Booked, queued | "You're #N in the queue" (in-app + email) | "New booking (queued)" (in-app) |
-| Promoted from the queue | "Good news: your booking is confirmed" (in-app + email + push) | — |
-| Changed | — | "Booking changed" (in-app) |
-| Member cancels a confirmed booking | — | "Booking cancelled by requester" (in-app) |
-| Admin cancels | "… cancelled by the administrator" + reason (in-app + email + push) | — |
-| Queued request expired | "Queued slot didn't free up" (in-app + email + push) | — |
-| Reminder | unchanged | — |
+| Event | Member | Admins | Everyone else |
+|---|---|---|---|
+| Booked, confirmed | "Booking confirmed" (in-app + email) | "New booking" (in-app) | "*Venue* is booked" (in-app) |
+| Booked, queued | "You're #N in the queue" (in-app + email) | "New booking (queued)" (in-app) | — |
+| Promoted from the queue | "Good news: your booking is confirmed" (in-app + email + push) | — | "*Venue* is booked" (in-app) |
+| Changed | — | "Booking changed" (in-app) | — |
+| Cancelled (by anyone) | "Booking cancelled" with the venue, dates and times, reference, **Status: Cancelled** and what happened to the time (in-app + email; push when someone else cancelled) | "Booking cancelled by requester" when a member cancels a confirmed booking (in-app) | "*Venue* is available again" when nobody was queued (in-app) |
+| Queued request expired | "Queued slot didn't free up" (in-app + email + push) | — | — |
+| Reminder | unchanged | — | — |
+
+**Everyone else** means every active member except the booker, the person who acted and Super Admins. It is in-app
+only (no email or push) and written with one `INSERT … SELECT` after the transaction commits, so a large campus costs
+one statement and never holds the venue lock. The link opens the venue. Complaints never broadcast.
+
+The cancellation notice always reaches the member, including when they cancelled it themselves, and ends with one
+of: "The time went to the next person in the queue." / "The time is available again: anyone can book it." / "The
+venue is unavailable at that time." (block or deactivation) / "You left the queue for this time." A cancelled queued
+request frees nothing, so it is never announced.
 
 ## Existing data (the migration)
 
@@ -106,3 +139,7 @@ confirmed bookings). Old notification types stay valid so the 180-day notificati
   `rejectionReason`, `decidedBy`, `decidedAt`, `approvalNote`. Admin permissions are `canCancel` and
   `canDownloadConfirmation` only.
 - `/admin/approvals` in the app redirects to *All bookings → In queue*.
+- Multi-day: `POST /bookings`, `PATCH /bookings/:id` and `GET /venues/:id/availability/check` accept `endDate`;
+  booking DTOs add `endDate` and `days`; block conflicts add `endDate`. List date filters match any overlapping day.
+- `/venues` and `/bookings` routes accept the Super Admin.
+- New notification types `venue_booked` and `venue_available`.

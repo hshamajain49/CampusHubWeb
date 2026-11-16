@@ -167,7 +167,7 @@ export async function createUser(actor: Actor, body: CreateUserBody): Promise<Us
 }
 
 async function lockEditableTarget(tx: any, actor: Actor, id: string) {
-  const { rows } = await tx.query('select * from public.profiles where id = $1 for update', [id]);
+  const { rows } = await tx.query('select * from public.profiles where id = $1 for no key update', [id]);
   const target = rows[0];
   if (!target) throw appError('USER_NOT_FOUND');
   if (target.id === actor.id) throw appError('PROTECTED_ACCOUNT', "You can't change your own account here.");

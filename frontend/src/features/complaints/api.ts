@@ -21,11 +21,13 @@ const DETAIL_STALE = 60_000;
 const DETAIL_GC = 5 * 60_000;
 
 // ─────────────────────────── categories ───────────────────────────
-export function useComplaintCategories() {
+/** Pass enabled=false to defer the fetch (dialogs load the list when they open). */
+export function useComplaintCategories(enabled = true) {
   return useQuery({
     queryKey: ['complaint-categories'],
     queryFn: () => apiFetch<ComplaintCategory[]>('/complaint-categories'),
     staleTime: 5 * 60_000,
+    enabled,
   });
 }
 

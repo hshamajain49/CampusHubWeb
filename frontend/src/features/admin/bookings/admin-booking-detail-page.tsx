@@ -4,7 +4,7 @@ import { Ban, Building2, CalendarDays, Clock, Download, IdCard, ListOrdered, Not
 import { ROLE_LABELS, STATUS_LABELS, type Booking } from '@campushub/shared';
 import { isApiError } from '@/lib/api-client';
 import { downloadFile } from '@/lib/download';
-import { formatDuration, formatLongDate, formatTimeRange, formatTimestamp, formatNumber } from '@/lib/format';
+
 import { useDocumentTitle } from '@/hooks/misc';
 import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
 import { useMe } from '@/providers/auth-provider';
@@ -20,6 +20,7 @@ import { StatusCallout } from '@/features/bookings/booking-detail-page';
 import { useAdminBreadcrumb } from '@/layouts/admin-layout';
 import { useAdminBooking } from '../api';
 import { CancelBookingDialog, StartsInChip } from './cancel-booking-dialog';
+import { formatBookingLongDates, formatDuration, formatNumber, formatTimeRange, formatTimestamp } from '@/lib/format';
 
 export default function AdminBookingDetailPage() {
   const { bookingId } = useParams();
@@ -139,12 +140,13 @@ export default function AdminBookingDetailPage() {
               </Link>
               <span className="block text-[12.5px] text-muted">{b.venue.building}{!b.venue.isActive ? ' · Inactive' : ''}</span>
             </InfoRow>
-            <InfoRow icon={CalendarDays} label="Date">
-              <span className="tabular">{formatLongDate(b.date)}</span>
+            <InfoRow icon={CalendarDays} label={b.days > 1 ? 'Dates' : 'Date'}>
+              <span className="tabular">{formatBookingLongDates(b)}</span>
             </InfoRow>
             <InfoRow icon={Clock} label="Time">
               <span className="tabular">
                 {formatTimeRange(b.startTime, b.endTime)} · {formatDuration(b.durationMinutes)}
+                {b.days > 1 ? ' daily' : ''}
               </span>
             </InfoRow>
             <InfoRow icon={IdCard} label="USN / Faculty ID">

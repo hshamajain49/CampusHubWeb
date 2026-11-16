@@ -13,6 +13,7 @@ export const memberPages = {
   profile: () => import('@/features/profile/profile-page'),
   notifications: () => import('@/features/notifications/notifications-page'),
   complaints: () => import('@/features/complaints/complaint-pages'),
+  suggestions: () => import('@/features/suggestions/suggestion-box-page'),
 };
 
 /** Department staff workspace (prefetched only for department_staff). */
@@ -45,6 +46,7 @@ export const adminPages = {
   complaintDetail: () => import('@/features/admin/complaints/admin-complaint-detail-page'),
   complaintNew: () => import('@/features/admin/complaints/admin-new-complaint-page'),
   complaintSetup: () => import('@/features/admin/complaint-setup/complaint-setup-page'),
+  suggestions: () => import('@/features/admin/suggestions/suggestions-page'),
 };
 
 /** Warms the given page chunks once the browser is idle after the shell mounts. Skipped on Save-Data connections. */

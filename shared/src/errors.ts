@@ -13,6 +13,7 @@ export const ERROR_HTTP_STATUS = {
   USER_NOT_FOUND: 404,
   BLOCK_NOT_FOUND: 404,
   NOTIFICATION_NOT_FOUND: 404,
+  SUGGESTION_NOT_FOUND: 404,
   COMPLAINT_NOT_FOUND: 404,
   DEPARTMENT_NOT_FOUND: 404,
   CATEGORY_NOT_FOUND: 404,
@@ -30,6 +31,8 @@ export const ERROR_HTTP_STATUS = {
   EMAIL_ALREADY_REGISTERED: 409,
   REQUESTER_INACTIVE: 409,
   PROTECTED_ACCOUNT: 409,
+  /** The only active Super Admin can't delete their account: the system would have no administrator. */
+  LAST_SUPER_ADMIN: 409,
   COMPLAINT_CHANGED: 409,
   REASSIGNMENT_ALREADY_REQUESTED: 409,
   DEPARTMENT_NAME_TAKEN: 409,
@@ -41,6 +44,7 @@ export const ERROR_HTTP_STATUS = {
   BOOKING_IN_PAST: 422,
   LEAD_TIME_NOT_MET: 422,
   TOO_FAR_IN_ADVANCE: 422,
+  TOO_MANY_DAYS: 422,
   CAPACITY_EXCEEDED: 422,
   BOOKING_LIMIT_REACHED: 422,
   MODIFICATION_WINDOW_CLOSED: 422,
@@ -106,6 +110,9 @@ export const DEFAULT_ERROR_MESSAGES: Partial<Record<ErrorCode, string>> = {
   BOOKING_CONFLICT:
     'This venue is already booked for the selected date/time. Please choose a different slot.',
   DUPLICATE_BOOKING: 'You already have a booking at this venue for this time.',
+  SUGGESTION_NOT_FOUND: 'Suggestion not found.',
+  LAST_SUPER_ADMIN: "You're the only Super Admin. Make someone else a Super Admin before deleting your account.",
+  TOO_MANY_DAYS: 'A booking can cover at most 14 days.',
   BOOKING_LIMIT_REACHED: 'You already have the maximum number of upcoming bookings. Cancel one before booking again.',
   VENUE_INACTIVE: 'This venue is no longer accepting bookings.',
   BOOKING_CHANGED:
@@ -142,6 +149,7 @@ export const FIELD_FOR_ERROR: Partial<Record<ErrorCode, string>> = {
   BOOKING_IN_PAST: 'startTime',
   LEAD_TIME_NOT_MET: 'startTime',
   TOO_FAR_IN_ADVANCE: 'date',
+  TOO_MANY_DAYS: 'endDate',
   CAPACITY_EXCEEDED: 'expectedAttendees',
   DURATION_OUT_OF_RANGE: 'endTime',
   BLOCK_IN_PAST: 'end',

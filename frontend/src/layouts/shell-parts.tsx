@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Link, Outlet, useLocation, useNavigation } from 'react-router';
-import { LogOut, UserRound } from 'lucide-react';
+import { Lightbulb, LogOut, UserRound } from 'lucide-react';
 import { ROLE_LABELS, type Me } from '@campushub/shared';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/providers/auth-provider';
@@ -8,7 +8,7 @@ import { usePublicSettings } from '@/hooks/use-public-settings';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/menus';
 import { UserAvatar } from '@/components/common/small';
 
-export function UserMenu({ me, profilePath, showName = true }: { me: Me; profilePath: string; showName?: boolean }) {
+export function UserMenu({ me, profilePath, suggestionsPath, showName = true }: { me: Me; profilePath: string; suggestionsPath?: string; showName?: boolean }) {
   const { signOut } = useAuth();
   return (
     <DropdownMenu>
@@ -38,6 +38,13 @@ export function UserMenu({ me, profilePath, showName = true }: { me: Me; profile
             <UserRound /> Profile
           </Link>
         </DropdownMenuItem>
+        {suggestionsPath && (
+          <DropdownMenuItem asChild>
+            <Link to={suggestionsPath}>
+              <Lightbulb /> Suggestion box
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem destructive onSelect={() => void signOut('signed_out')}>
           <LogOut /> Sign out

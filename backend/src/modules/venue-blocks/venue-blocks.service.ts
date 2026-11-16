@@ -103,7 +103,7 @@ async function saveBlock(actor: Actor, input: BlockInput, existingId: string | n
 
       const overlapping = (
         await tx.query(
-          `select b.id, b.reference, b.status, b.booking_date as date, to_char(b.start_time, 'HH24:MI') as st,
+          `select b.id, b.reference, b.status, b.booking_date as date, b.end_date, to_char(b.start_time, 'HH24:MI') as st,
                   to_char(b.end_time, 'HH24:MI') as et, p.id as requester_id, p.full_name
              from public.bookings b join public.profiles p on p.id = b.requester_id
             where b.venue_id = $1 and b.status in ('confirmed','queued')
@@ -120,6 +120,7 @@ async function saveBlock(actor: Actor, input: BlockInput, existingId: string | n
           reference: r.reference,
           status: r.status,
           date: r.date,
+          endDate: r.end_date,
           startTime: r.st,
           endTime: r.et,
           requester: { id: r.requester_id, fullName: r.full_name },

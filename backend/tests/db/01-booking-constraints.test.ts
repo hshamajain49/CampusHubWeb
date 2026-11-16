@@ -214,3 +214,78 @@ describe('auth integration, settings and provisioning (02, 07, 08)', () => {
       expect(await attempt(c, 'update app_settings set max_active_per_user = 0 where id = 1')).toBe('23514');
     }));
 });
+
+describe('multi-day bookings (docs/BOOKINGS.md)', () => {
+  const multi = `insert into bookings (venue_id, requester_id, booking_date, end_date, start_time, end_time, purpose, status)
+                 values ($1, $2, $3, $4, $5, $6, 'Multi-day', $7) returning id`;
+
+  it('holds the same window on every day; any one clashing day is a conflict, other hours are free', () =>
+    withRollback(async (c) => {
+      await baseFixtures(c);
+      expect(await attempt(c, multi, [ID.venue, ID.stu1, '2099-05-04', '2099-05-06', '10:00', '12:00', 'confirmed'])).toBeNull();
+      // Overlaps only on the last day.
+      expect(await attempt(c, multi, [ID.venue, ID.stu2, '2099-05-06', '2099-05-08', '11:00', '13:00', 'confirmed'])).toBe('23P01');
+      // Same days, afternoon: no overlap.
+      expect(await attempt(c, multi, [ID.venue, ID.stu2, '2099-05-04', '2099-05-06', '12:00', '14:00', 'confirmed'])).toBeNull();
+      // Queued requests may overlap any day.
+      expect(await attempt(c, multi, [ID.venue, ID.stu2, '2099-05-05', '2099-05-05', '10:00', '11:00', 'queued'])).toBeNull();
+      const slot = (await c.query(`select (select count(*) from unnest(slot))::int days, lower(slot)::text lo, upper(slot)::text hi
+                                     from bookings where purpose = 'Multi-day' and booking_date = '2099-05-04' and start_time = '10:00'`)).rows[0];
+      expect(slot).toEqual({ days: 3, lo: '2099-05-04 10:00:00', hi: '2099-05-06 12:00:00' });
+    }));
+
+  it('refuses an end before the start and more than 14 days; single-day inserts default end_date', () =>
+    withRollback(async (c) => {
+      await baseFixtures(c);
+      expect(await attempt(c, multi, [ID.venue, ID.stu1, '2099-06-10', '2099-06-09', '10:00', '11:00', 'confirmed'])).toBe('23514');
+      expect(await attempt(c, multi, [ID.venue, ID.stu1, '2099-06-01', '2099-06-15', '10:00', '11:00', 'confirmed'])).toBe('23514');
+      expect(await attempt(c, multi, [ID.venue, ID.stu1, '2099-06-01', '2099-06-14', '10:00', '11:00', 'confirmed'])).toBeNull();
+      const single = await c.query(
+        `insert into bookings (venue_id, requester_id, booking_date, start_time, end_time, purpose, status)
+         values ($1, $2, '2099-06-20', '10:00', '11:00', 'Single', 'confirmed') returning end_date::text`,
+        [ID.venue, ID.stu1],
+      );
+      expect(single.rows[0].end_date).toBe('2099-06-20');
+    }));
+
+  it('promotes a multi-day queued request only once every one of its days is free', () =>
+    withRollback(async (c) => {
+      await baseFixtures(c);
+      const one = (await c.query(multi, [ID.venue, ID.stu1, '2099-07-01', '2099-07-01', '10:00', '12:00', 'confirmed'])).rows[0].id;
+      const two = (await c.query(multi, [ID.venue, ID.admin, '2099-07-03', '2099-07-03', '10:00', '12:00', 'confirmed'])).rows[0].id;
+      const waiting = (await c.query(multi, [ID.venue, ID.stu2, '2099-07-01', '2099-07-03', '10:00', '11:00', 'queued'])).rows[0].id;
+      await c.query(`update bookings set status = 'cancelled', cancelled_at = now() where id = $1`, [one]);
+      expect((await c.query('select booking_id from promote_queued_bookings($1)', [ID.venue])).rows).toEqual([]); // day 3 still taken
+      await c.query(`update bookings set status = 'cancelled', cancelled_at = now() where id = $1`, [two]);
+      expect((await c.query('select booking_id from promote_queued_bookings($1)', [ID.venue])).rows.map((r) => r.booking_id)).toEqual([waiting]);
+    }));
+});
+
+describe('account deletion keeps other people’s records (docs/ACCOUNTS.md)', () => {
+  it('turns references to a deleted person into NULL instead of blocking or deleting others’ rows', () =>
+    withRollback(async (c) => {
+      await baseFixtures(c);
+      const theirs = (
+        await c.query(
+          `insert into bookings (venue_id, requester_id, booking_date, start_time, end_time, purpose, status)
+           values ($1, $2, '2099-08-01', '10:00', '11:00', 'Kept', 'confirmed') returning id`,
+          [ID.venue, ID.stu1],
+        )
+      ).rows[0].id;
+      // The admin cancels it and creates a block: both point at the admin.
+      await c.query("select set_config('app.actor_id', $1, true)", [ID.admin]);
+      await c.query(`update bookings set status = 'cancelled', cancelled_by = $2, cancelled_at = now() where id = $1`, [theirs, ID.admin]);
+      await c.query(
+        `insert into venue_blocks (venue_id, block_type, reason, starts_at, ends_at, created_by)
+         values ($1, 'maintenance', 'Painting', '2099-08-02 09:00', '2099-08-02 17:00', $2)`,
+        [ID.venue, ID.admin],
+      );
+      await c.query("select set_config('app.actor_id', '', true)");
+      expect(await attempt(c, 'delete from auth_users where id = $1', [ID.admin])).toBeNull();
+      expect((await c.query('select cancelled_by from bookings where id = $1', [theirs])).rows[0]).toEqual({ cancelled_by: null });
+      expect((await c.query(`select count(*)::int n from booking_history where booking_id = $1 and event_type = 'cancelled' and actor_id is null`, [theirs])).rows[0].n).toBe(1);
+      expect((await c.query(`select created_by from venue_blocks where reason = 'Painting'`)).rows[0]).toEqual({ created_by: null });
+      // A member with bookings can't be removed by accident: the API deletes their bookings first.
+      expect(await attempt(c, 'delete from auth_users where id = $1', [ID.stu1])).toBe('23503');
+    }));
+});

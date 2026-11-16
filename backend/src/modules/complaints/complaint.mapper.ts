@@ -129,8 +129,7 @@ export async function toComplaint(db: DbClient, r: any, settings: AppSettings, v
       ? reporterPermissions(state, settings.complaintReopenWindowDays)
       : viewer.kind === 'staff'
         ? staffPermissions(state)
-        : adminPermissions(state, viewer.actorId === r.reporter_id);
-  const privileged = viewer.kind !== 'reporter';
+        : adminPermissions(state, viewer.actorId === r.reporter_id, settings.complaintReopenWindowDays);
   const { reporter: _omit, ...summary } = toComplaintSummary(r);
   return {
     ...summary,
@@ -140,9 +139,9 @@ export async function toComplaint(db: DbClient, r: any, settings: AppSettings, v
     rejectionReason: r.rejection_reason,
     closureType: r.closure_type,
     closureReason: r.closure_reason,
-    reassignmentNote: privileged ? r.reassignment_note : null,
+    reassignmentNote: r.reassignment_note,
     reassignmentSuggestedCategory:
-      privileged && r.reassignment_suggested_category_id
+      r.reassignment_suggested_category_id
         ? {
             id: r.reassignment_suggested_category_id,
             name: r.suggested_category_name,

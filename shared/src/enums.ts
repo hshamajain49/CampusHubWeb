@@ -104,6 +104,9 @@ export const NOTIFICATION_TYPES = [
   'admin_new_booking',
   'admin_request_modified',
   'admin_booking_cancelled',
+  /** Sent to every member: a venue was booked / a cancelled slot is free again (venue bookings only, never complaints). */
+  'venue_booked',
+  'venue_available',
   // written before approvals were retired; still listed in the 180-day notification history
   'booking_approved',
   'booking_rejected',
@@ -144,6 +147,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'user.activated': 'Activated user',
   'user.deactivated': 'Deactivated user',
   'user.password_reset_sent': 'Sent password reset',
+  'user.deleted': 'Account deleted',
   'user.super_admin_provisioned': 'Provisioned Super Admin',
   'settings.updated': 'Updated settings',
   'complaint.work_started': 'Started work on complaint',
@@ -163,6 +167,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
 };
 
 export const TIME_STEPS = [5, 10, 15, 20, 30, 60] as const;
+
+// ───────────────────────────── Suggestion box ─────────────────────────────
+export const SUGGESTION_STATUSES = ['new', 'reviewed'] as const;
+export type SuggestionStatus = (typeof SUGGESTION_STATUSES)[number];
+export const SUGGESTION_STATUS_LABELS: Record<SuggestionStatus, string> = { new: 'New', reviewed: 'Reviewed' };
 export const REMINDER_LEADS = [0, 30, 60, 120, 180, 360, 720, 1440] as const;
 
 // ───────────────────────────── Complaints (COMPLAINT_REGISTRATION_SPEC.md) ─────────────────────────────

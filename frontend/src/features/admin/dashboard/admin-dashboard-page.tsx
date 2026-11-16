@@ -4,6 +4,7 @@ import {
   AlarmClock,
   Building2,
   CalendarCheck,
+  CalendarPlus,
   CalendarRange,
   Check,
   ChartColumn,
@@ -23,6 +24,7 @@ import { formatDate, formatLongDate, formatShortDay, formatTimeRange, timeAgo } 
 import { useDocumentTitle } from '@/hooks/misc';
 import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
 import { useMe } from '@/providers/auth-provider';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/controls';
 import { PageHeader, SectionCard, StatCard, ViewAllLink } from '@/components/common/layout-bits';
 import { EmptyState, ErrorState } from '@/components/common/states';
@@ -67,6 +69,20 @@ export default function AdminDashboardPage() {
         className="mb-0"
         title="Dashboard"
         description={today ? `${formatLongDate(today)}${settings ? ` · ${settings.institutionName}` : ''}` : undefined}
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <Link to="/admin/complaints/new">
+                <Megaphone /> Report an issue
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link to="/admin/book">
+                <CalendarPlus /> Book a venue
+              </Link>
+            </Button>
+          </>
+        }
       />
 
       <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">

@@ -3,12 +3,14 @@ import { Link, useLocation } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Building2,
+  CalendarCheck,
   CalendarDays,
   CalendarRange,
   ChartColumn,
   Megaphone,
   Tags,
   LayoutDashboard,
+  Lightbulb,
   LogOut,
   Menu,
   PanelLeftClose,
@@ -65,6 +67,7 @@ const GROUPS = [
     items: [
       { to: '/admin/bookings', label: 'All bookings', icon: CalendarDays },
       { to: '/admin/calendar', label: 'Calendar', icon: CalendarRange },
+      { to: '/admin/my-bookings', label: 'My bookings', icon: CalendarCheck },
     ],
   },
   {
@@ -81,7 +84,13 @@ const GROUPS = [
       { to: '/admin/users', label: 'Users', icon: Users },
     ],
   },
-  { label: 'Insights', items: [{ to: '/admin/reports', label: 'Reports', icon: ChartColumn }] },
+  {
+    label: 'Insights',
+    items: [
+      { to: '/admin/reports', label: 'Reports', icon: ChartColumn },
+      { to: '/admin/suggestions', label: 'Suggestion box', icon: Lightbulb, badge: 'suggestions' },
+    ],
+  },
   {
     label: 'System',
     items: [
@@ -95,6 +104,9 @@ const SECTION_LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
   bookings: 'All bookings',
   calendar: 'Calendar',
+  'my-bookings': 'My bookings',
+  book: 'Book a venue',
+  suggestions: 'Suggestion box',
   complaints: 'All complaints',
   'complaint-setup': 'Departments & categories',
   venues: 'Venues',
@@ -105,7 +117,7 @@ const SECTION_LABELS: Record<string, string> = {
   notifications: 'Notifications',
 };
 
-type Badges = { complaints: number };
+type Badges = { complaints: number; suggestions: number };
 
 function SidebarNav({ collapsed, badges, onNavigate }: { collapsed: boolean; badges: Badges; onNavigate?: () => void }) {
   const { pathname } = useLocation();
@@ -167,7 +179,7 @@ export function AdminLayout() {
   const dash = useAdminDashboard();
   // All complaints: open complaints needing reassignment + new today (§8.2). Bookings need no admin action.
   const ck = dash.data?.complaintKpis;
-  const badges: Badges = { complaints: ck ? ck.needsReassignment + ck.newToday : 0 };
+  const badges: Badges = { complaints: ck ? ck.needsReassignment + ck.newToday : 0, suggestions: dash.data?.kpis.newSuggestions ?? 0 };
 
   const section = pathname.split('/')[2] ?? 'dashboard';
   const trail = crumbs ?? [{ label: pathname.startsWith('/admin/settings/audit-log') ? 'Audit log' : (SECTION_LABELS[section] ?? 'Admin') }];

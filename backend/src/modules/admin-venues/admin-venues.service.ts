@@ -9,14 +9,14 @@ import { loadCampus } from '../../domain/settings.js';
 import { imageStore } from '../../lib/image-store.js';
 import { logger } from '../../lib/logger.js';
 import { audit } from '../audit/audit-writer.js';
-import { publish } from '../notifications/notifier.js';
+import { cancelAndOfferSlot } from '../bookings/bookings.service.js';
 import { toVenue } from '../venues/venues.service.js';
 import { BOOKING_SELECT_INNER, normalize } from '../bookings/bookings.service.js';
 import { UPCOMING_SQL } from '../bookings/booking.queries.js';
 import { toBookingSummary } from '../bookings/booking.mapper.js';
 
 const STATS = `
-  (select count(*) from public.bookings b where b.venue_id = v.id and b.status = 'confirmed' and (b.booking_date + b.end_time) > $NOW::timestamp) as upcoming_confirmed,
+  (select count(*) from public.bookings b where b.venue_id = v.id and b.status = 'confirmed' and (b.end_date + b.end_time) > $NOW::timestamp) as upcoming_confirmed,
   (select count(*) from public.bookings b where b.venue_id = v.id and b.status = 'queued' and (b.booking_date + b.start_time) > $NOW::timestamp) as queued_count,
   (select count(*) from public.bookings b where b.venue_id = v.id) as total_bookings,
   (select count(*) from public.complaints x where x.venue_id = v.id
@@ -150,8 +150,17 @@ export async function closeBookings(
     `update public.bookings set status = 'cancelled', cancellation_reason = $2, cancelled_by = $3, cancelled_at = now() where id = any($1::uuid[])`,
     [rows.map((r) => r.id), note.slice(0, 500), actor.id],
   );
+  // The venue is blocked or deactivated at these times, so nothing is offered to the queue or announced as free.
   for (const r of rows) {
-    await publish(tx, { type: 'booking.cancelled', bookingId: r.id, actorId: actor.id, data: { cancelledBy: 'system', previousStatus: r.status, note } });
+    await cancelAndOfferSlot(tx, {
+      id: r.id,
+      venueId: '',
+      previousStatus: r.status,
+      cancelledBy: 'system',
+      actorId: actor.id,
+      note,
+      slotUnavailable: true,
+    });
   }
   return { cancelled: rows.length };
 }

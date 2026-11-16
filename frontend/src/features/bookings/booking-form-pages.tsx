@@ -13,6 +13,7 @@ import { EmptyState, ErrorState } from '@/components/common/states';
 import { useVenue } from '@/features/venues/api';
 import { BookingForm } from './booking-form';
 import { useBooking } from './api';
+import { useBookingPaths } from './paths';
 
 function FormSkeleton() {
   return (
@@ -24,6 +25,7 @@ function FormSkeleton() {
 }
 
 export function NewBookingPage() {
+  const paths = useBookingPaths();
   const me = useMe();
   useDocumentTitle('Book a venue');
   const [params] = useSearchParams();
@@ -31,7 +33,7 @@ export function NewBookingPage() {
   const venue = useVenue(venueId);
   const settings = usePublicSettings();
 
-  const header = <PageHeader title="Book a venue" description="A free time is confirmed instantly. A booked time puts you in the queue for it." breadcrumb={[{ label: 'Venues', to: '/venues' }, { label: 'New booking' }]} />;
+  const header = <PageHeader title="Book a venue" description="A free time is confirmed instantly. A booked time puts you in the queue for it." breadcrumb={[{ label: 'Venues', to: paths.venues }, { label: 'New booking' }]} />;
 
   if (settings.isLoading || (venueId && venue.isLoading)) {
     return (
@@ -53,7 +55,7 @@ export function NewBookingPage() {
               message="It may have been deactivated or removed."
               action={
                 <Button asChild>
-                  <Link to="/venues">Browse venues</Link>
+                  <Link to={paths.venues}>Browse venues</Link>
                 </Button>
               }
             />
@@ -75,6 +77,8 @@ export function NewBookingPage() {
         initial={{
           venueId: venueId ?? '',
           date: params.get('date') ?? '',
+          multiDay: !!params.get('endDate'),
+          endDate: params.get('endDate') ?? '',
           startTime: params.get('start') ?? '',
           endTime: params.get('end') ?? '',
           purpose: params.get('purpose') ?? '',
@@ -87,6 +91,7 @@ export function NewBookingPage() {
 }
 
 export function EditBookingPage() {
+  const paths = useBookingPaths();
   const me = useMe();
   const { bookingId } = useParams();
   const booking = useBooking(bookingId);
@@ -101,13 +106,13 @@ export function EditBookingPage() {
   if (booking.isError) {
     return isApiError(booking.error) && booking.error.status === 404 ? (
       <div className="card">
-        <EmptyState title="Booking not found" message="It may have been removed, or you may not have access." action={<Button asChild><Link to="/bookings">My bookings</Link></Button>} />
+        <EmptyState title="Booking not found" message="It may have been removed, or you may not have access." action={<Button asChild><Link to={paths.list}>My bookings</Link></Button>} />
       </div>
     ) : (
       <ErrorState onRetry={() => booking.refetch()} />
     );
   }
-  if (!b!.permissions.canEdit) return <Navigate to={`/bookings/${b!.id}`} replace />;
+  if (!b!.permissions.canEdit) return <Navigate to={paths.detail(b!.id)} replace />;
 
   const venue: VenueSummary = {
     id: b!.venue.id,
@@ -127,7 +132,7 @@ export function EditBookingPage() {
       <PageHeader
         title="Edit booking"
         description={<span className="font-mono text-[13px]">{b!.reference}</span>}
-        breadcrumb={[{ label: 'My bookings', to: '/bookings' }, { label: b!.reference, to: `/bookings/${b!.id}` }, { label: 'Edit' }]}
+        breadcrumb={[{ label: 'My bookings', to: paths.list }, { label: b!.reference, to: paths.detail(b!.id) }, { label: 'Edit' }]}
       />
       {b!.status === 'confirmed' ? (
         <Alert variant="info" className="mb-5" title="Your booking is confirmed">
@@ -147,6 +152,8 @@ export function EditBookingPage() {
         initial={{
           venueId: b!.venue.id,
           date: b!.date,
+          multiDay: b!.days > 1,
+          endDate: b!.days > 1 ? b!.endDate : '',
           startTime: b!.startTime,
           endTime: b!.endTime,
           purpose: b!.purpose,

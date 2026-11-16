@@ -7,6 +7,7 @@ import type {
   MemberRole,
   NotificationType,
   Role,
+  SuggestionStatus,
   VenueType,
 } from '../enums.js';
 import type { ComplaintKpis, ComplaintRules, ComplaintSummary, DepartmentRef } from './complaints.js';
@@ -144,11 +145,19 @@ export interface BookingSummary {
   id: string;
   reference: string;
   venue: { id: string; name: string; building: string; isActive: boolean };
+  /** First day. */
   date: string;
+  /** Last day (= date for a single day). The time window repeats every day from date to endDate. */
+  endDate: string;
+  /** Number of days covered (1 for a single day). */
+  days: number;
   startTime: string;
   endTime: string;
+  /** Start of the first day. */
   start: string;
+  /** End of the last day. */
   end: string;
+  /** Length of each day's window. */
   durationMinutes: number;
   purpose: string;
   expectedAttendees: number | null;
@@ -204,6 +213,8 @@ export interface AdminBookingListItem {
   venue: { id: string; name: string; building: string; capacity: number; isActive: boolean };
   requester: { id: string; fullName: string; email: string; role: Role; isActive: boolean };
   date: string;
+  endDate: string;
+  days: number;
   startTime: string;
   endTime: string;
   start: string;
@@ -284,6 +295,8 @@ export interface BlockConflict {
   reference: string;
   status: BookingStatus;
   date: string;
+  /** Last day of a multi-day booking (= date for one day). */
+  endDate: string;
   startTime: string;
   endTime: string;
   requester: PersonRef;
@@ -389,6 +402,8 @@ export interface AdminDashboard {
     newBookings30d: number;
     /** Queued requests that got their slot in the last 30 days. */
     promoted30d: number;
+    /** Suggestion-box entries nobody has reviewed yet. */
+    newSuggestions: number;
   };
   complaintKpis: ComplaintKpis;
   complaintsNeedingReassignment: ComplaintSummary[];
@@ -406,6 +421,24 @@ export interface AdminDashboard {
     actor: PersonWithRole | null;
     createdAt: string;
   }[];
+}
+
+export interface Suggestion {
+  id: string;
+  subject: string;
+  message: string;
+  status: SuggestionStatus;
+  /** The administrator's reply, shown to the author. */
+  adminResponse: string | null;
+  reviewedBy: PersonRef | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminSuggestion extends Suggestion {
+  /** Null when the author deleted their account (their suggestions go with it, so this is rare). */
+  author: { id: string; fullName: string; email: string; role: Role } | null;
 }
 
 export interface ReportSummary {

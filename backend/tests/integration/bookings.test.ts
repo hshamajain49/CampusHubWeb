@@ -38,9 +38,10 @@ describe('auth and role guards', () => {
     expect(res.body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('BT-AUTH-06: members cannot reach /admin and admins cannot reach /bookings', async () => {
+  it('BT-AUTH-06: members cannot reach /admin; the Super Admin can also book for themselves', async () => {
     expect((await as(stu.token).get('/admin/dashboard')).status).toBe(403);
-    expect((await as(admin.token).get('/bookings')).status).toBe(403);
+    expect((await as(admin.token).get('/bookings')).status).toBe(200);
+    expect((await as(admin.token).get('/venues')).status).toBe(200);
     expect((await as(admin.token).get('/admin/dashboard')).status).toBe(200);
   });
 
@@ -128,7 +129,7 @@ describe('booking lifecycle and queue', () => {
     const free = await as(stu.token).get(`/venues/${venueId}/availability/check?date=${day}&startTime=16:00&endTime=17:00`);
     expect(free.body.data, JSON.stringify(free.body)).toMatchObject({ available: true, outcome: 'confirm', queuePosition: null });
     const taken = await as(admin.token).get(`/venues/${venueId}/availability/check?date=${day}&startTime=10:00&endTime=11:00`);
-    expect(taken.status).toBe(403); // admins don't book
+    expect(taken.body.data).toMatchObject({ outcome: 'queue' }); // the admin can book too
     const queued = await as(stu.token).get(`/venues/${venueId}/availability/check?date=${day}&startTime=14:00&endTime=15:00`);
     expect(queued.body.data, JSON.stringify(queued.body)).toMatchObject({ available: true, outcome: 'queue', queuePosition: 1 });
   });

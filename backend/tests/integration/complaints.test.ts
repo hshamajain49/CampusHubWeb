@@ -259,48 +259,71 @@ describe('C08–C14 department staff', () => {
     expect([fourth.status, fourth.body.error.code]).toEqual([422, 'TOO_MANY_FILES']);
   });
 
-  it('CBT-09: request reassignment (once), admin reassigns to another queue, dismiss clears the flag', async () => {
+  it('CBT-09: the department asks to move it (once); the reporter sees the request and moves it — no admin step', async () => {
     const c = await fileComplaint(stu, 'electrical', { title: 'Water near the switchboard' });
     const req = await as(elec.token).post(`/staff/complaints/${c.id}/request-reassignment`, { version: 1, reason: 'This is a water leak.', suggestedCategoryId: cat.plumbing });
     expect(req.body.data.reassignmentRequested).toBe(true);
     expect(req.body.data.reassignmentSuggestedCategory.name).toBe('Plumbing');
     const dup = await as(elec.token).post(`/staff/complaints/${c.id}/request-reassignment`, { version: 2, reason: 'Again please' });
     expect([dup.status, dup.body.error.code]).toEqual([409, 'REASSIGNMENT_ALREADY_REQUESTED']);
-    const flagged = await as(admin.token).get('/admin/complaints?flag=reassignment');
-    expect(flagged.body.data.map((x: any) => x.id)).toContain(c.id);
-    const same = await as(admin.token).post(`/admin/complaints/${c.id}/reassign`, { version: 2, categoryId: cat.electrical, note: 'Same' });
+    // The reporter sees the department's request and may act on it.
+    const seen = (await as(stu.token).get(`/complaints/${c.id}`)).body.data;
+    expect(seen).toMatchObject({ reassignmentNote: 'This is a water leak.', permissions: { canReassign: true, canDismissReassignment: true } });
+    expect(seen.reassignmentSuggestedCategory.department.name).toBe('Plumbing Department');
+    // Only the reporter: another member gets 404, the admin has no such endpoint.
+    expect((await as(other.token).post(`/complaints/${c.id}/reassign`, { version: 2, categoryId: cat.plumbing })).status).toBe(404);
+    expect((await as(admin.token).post(`/admin/complaints/${c.id}/reassign`, { version: 2, categoryId: cat.plumbing, note: 'x' })).status).toBe(404);
+    const same = await as(stu.token).post(`/complaints/${c.id}/reassign`, { version: 2, categoryId: cat.electrical });
     expect(same.status).toBe(400);
-    const moved = await as(admin.token).post(`/admin/complaints/${c.id}/reassign`, { version: 2, categoryId: cat.plumbing, note: 'Water leak — moved to Plumbing.' });
+    const moved = await as(stu.token).post(`/complaints/${c.id}/reassign`, { version: 2, categoryId: cat.plumbing, note: 'It is a leak.' });
     expect(moved.status, JSON.stringify(moved.body)).toBe(200);
     expect([moved.body.data.status, moved.body.data.department.name, moved.body.data.reassignmentRequested]).toEqual([
       'pending_review', 'Plumbing Department', false,
     ]);
     const last = moved.body.data.history.at(-1);
-    expect(last.eventType).toBe('reassigned');
+    expect(last).toMatchObject({ eventType: 'reassigned', actor: { id: stu.id } });
     expect(last.changes.department).toEqual({ fromName: 'Electrical Department', toName: 'Plumbing Department' });
     expect((await as(elec.token).get(`/staff/complaints/${c.id}`)).status).toBe(404);
     expect((await as(plumb.token).get('/staff/complaints?tab=new')).body.data.map((x: any) => x.id)).toContain(c.id);
-    const audit = await pool.query(`select action from audit_logs where entity_type = 'complaint' and entity_id = $1`, [c.id]);
-    expect(audit.rows.map((r) => r.action)).toEqual(['complaint.reassigned']);
 
+    // The reporter can also keep it where it is.
     const d = await fileComplaint(stu, 'electrical', { title: 'Odd smell from a socket' });
     await as(elec.token).post(`/staff/complaints/${d.id}/request-reassignment`, { version: 1, reason: 'Probably housekeeping' });
-    const dismissed = await as(admin.token).post(`/admin/complaints/${d.id}/reassign`, { version: 2, dismiss: true, note: 'Electrical issue after all.' });
-    expect([dismissed.body.data.reassignmentRequested, dismissed.body.data.department.name]).toEqual([false, 'Electrical Department']);
-    expect(dismissed.body.data.history.at(-1).eventType).toBe('reassignment_dismissed');
+    const kept = await as(stu.token).post(`/complaints/${d.id}/dismiss-reassignment`, { version: 2, note: 'It really is the socket.' });
+    expect([kept.body.data.reassignmentRequested, kept.body.data.department.name]).toEqual([false, 'Electrical Department']);
+    expect(kept.body.data.history.at(-1).eventType).toBe('reassignment_dismissed');
+    // ...and move it on their own, without any request.
+    const e = await fileComplaint(stu, 'electrical', { title: 'Leaking pipe' });
+    const self = await as(stu.token).post(`/complaints/${e.id}/reassign`, { version: 1, categoryId: cat.plumbing });
+    expect(self.body.data.department.name).toBe('Plumbing Department');
   });
 });
 
 describe('C15–C29 administration', () => {
-  it('CBT-10: close with a type; closed is immutable; resolved cannot be closed', async () => {
-    const c = await fileComplaint(stu, 'other', { title: 'Duplicate of an earlier issue' });
-    expect((await as(admin.token).post(`/admin/complaints/${c.id}/close`, { version: 1, reason: 'Dup' })).status).toBe(400);
-    const closed = await as(admin.token).post(`/admin/complaints/${c.id}/close`, { version: 1, closureType: 'duplicate', reason: 'Same issue as an earlier report.' });
+  it('CBT-10: the department closes with a type; closed is immutable; another department cannot', async () => {
+    const c = await fileComplaint(stu, 'electrical', { title: 'Duplicate of an earlier issue' });
+    expect((await as(elec.token).post(`/staff/complaints/${c.id}/close`, { version: 1, reason: 'Dup' })).status).toBe(400);
+    expect((await as(plumb.token).post(`/staff/complaints/${c.id}/close`, { version: 1, closureType: 'duplicate', reason: 'Not ours.' })).status).toBe(404);
+    const closed = await as(elec.token).post(`/staff/complaints/${c.id}/close`, { version: 1, closureType: 'duplicate', reason: 'Same issue as an earlier report.' });
     expect([closed.body.data.status, closed.body.data.closureType]).toEqual(['closed', 'duplicate']);
-    expect((await as(admin.token).post(`/admin/complaints/${c.id}/start`, { version: 2 })).status).toBe(409);
+    expect((await as(elec.token).post(`/staff/complaints/${c.id}/start`, { version: 2 })).status).toBe(409);
     expect((await as(stu.token).post(`/complaints/${c.id}/withdraw`, { version: 2 })).status).toBe(409);
     const view = await as(stu.token).get(`/complaints/${c.id}`);
     expect(view.body.data.closureReason).toBe('Same issue as an earlier report.');
+  });
+
+  it('CBT-10b: the Super Admin monitors only — no work actions, no permissions, the endpoints are gone', async () => {
+    const c = await fileComplaint(stu, 'electrical', { title: 'Admin only watches' });
+    const view = (await as(admin.token).get(`/admin/complaints/${c.id}`)).body.data;
+    expect(Object.values(view.permissions).some(Boolean)).toBe(false);
+    for (const action of ['start', 'reopen', 'reassign', 'close']) {
+      expect((await as(admin.token).post(`/admin/complaints/${c.id}/${action}`, { version: 1 })).status, action).toBe(404);
+    }
+    expect((await as(admin.token).post(`/staff/complaints/${c.id}/start`, { version: 1 })).status).toBe(403);
+    // On a complaint the admin filed, they act as its reporter.
+    const own = await fileComplaint(admin, 'electrical', { title: 'Filed by the admin' });
+    const mine = (await as(admin.token).get(`/admin/complaints/${own.id}`)).body.data;
+    expect(mine.permissions).toMatchObject({ canWithdraw: true, canReassign: true, canStart: false, canClose: false });
   });
 
   it('CBT-11: department and category setup — uniqueness, slugs, deactivation blocked with counts', async () => {
@@ -411,7 +434,7 @@ describe('C15–C29 administration', () => {
     expect(statuses.all).toBeGreaterThan(statuses.pending_review);
   });
 
-  it('CBT-14: concurrent starts and approve-vs-close: exactly one succeeds', async () => {
+  it('CBT-14: concurrent starts and approve-vs-reject: exactly one succeeds', async () => {
     const elecB = await staffMember('race@cmp.edu', 'Electrical Department');
     const c = await fileComplaint(stu, 'electrical', { title: 'Race to start' });
     const starts = await Promise.all([elec, elecB].map((u) => as(u.token).post(`/staff/complaints/${c.id}/start`, { version: 1 })));
@@ -419,7 +442,7 @@ describe('C15–C29 administration', () => {
     await as(elec.token).multipart(`/staff/complaints/${c.id}/complete`, { version: 2 });
     const [approve, close] = await Promise.all([
       as(stu.token).post(`/complaints/${c.id}/approve`, { version: 3 }),
-      as(admin.token).post(`/admin/complaints/${c.id}/close`, { version: 3, closureType: 'other', reason: 'Closing it' }),
+      as(stu.token).post(`/complaints/${c.id}/reject`, { version: 3, reason: 'Still broken' }),
     ]);
     expect([approve.status, close.status].sort()).toEqual([200, 409]);
   });

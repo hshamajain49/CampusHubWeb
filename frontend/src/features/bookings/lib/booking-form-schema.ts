@@ -8,6 +8,9 @@ export function buildBookingFormSchema(rules: BookingRules | undefined, capacity
     .object({
       venueId: z.string().min(1, 'Choose a venue'),
       date: z.string().min(1, 'Pick a date'),
+      /** Multi-day booking: the same time on every day from date to endDate (inclusive). */
+      multiDay: z.boolean(),
+      endDate: z.string(),
       startTime: z.string().min(1, 'Pick a start time'),
       endTime: z.string().min(1, 'Pick an end time'),
       purpose: z
@@ -28,8 +31,13 @@ export function buildBookingFormSchema(rules: BookingRules | undefined, capacity
         ),
     })
     .superRefine((v, ctx) => {
+      if (v.multiDay && v.date) {
+        if (!v.endDate) ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'Pick the last day' });
+        else if (v.endDate <= v.date) ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'The last day must be after the first day.' });
+      }
+      const endDate = formEndDate(v);
       if (rules && localNow && v.date && v.startTime && v.endTime) {
-        for (const viol of collectSlotViolations({ date: v.date, startTime: v.startTime, endTime: v.endTime }, rules, localNow)) {
+        for (const viol of collectSlotViolations({ date: v.date, endDate, startTime: v.startTime, endTime: v.endTime }, rules, localNow)) {
           ctx.addIssue({ code: 'custom', path: [viol.field], message: viol.message });
         }
       }
@@ -39,9 +47,17 @@ export function buildBookingFormSchema(rules: BookingRules | undefined, capacity
     });
 }
 
+/** The last day the form books, or undefined for a single day. */
+export function formEndDate(v: Pick<BookingFormValues, 'date' | 'multiDay' | 'endDate'>): string | undefined {
+  return v.multiDay && v.endDate && v.date && v.endDate > v.date ? v.endDate : undefined;
+}
+
 export type BookingFormValues = {
   venueId: string;
   date: string;
+  multiDay: boolean;
+  /** Last day when multiDay is on; '' otherwise. */
+  endDate: string;
   startTime: string;
   endTime: string;
   purpose: string;

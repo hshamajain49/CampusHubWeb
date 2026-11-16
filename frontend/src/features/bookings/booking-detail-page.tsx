@@ -6,7 +6,7 @@ import type { Booking } from '@campushub/shared';
 import { STATUS_LABELS } from '@campushub/shared';
 import { isApiError, ApiError } from '@/lib/api-client';
 import { downloadFile } from '@/lib/download';
-import { formatDuration, formatLongDate, formatTimeRange, formatTimestamp, campusDateOf, formatDate, formatNumber } from '@/lib/format';
+
 import { useDocumentTitle } from '@/hooks/misc';
 import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
 import { useMe } from '@/providers/auth-provider';
@@ -23,6 +23,8 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { Field } from '@/components/common/form-field';
 import { TimingChip } from '@/components/common/booking-visuals';
 import { useBooking, useCancelBooking } from './api';
+import { campusDateOf, formatBookingLongDates, formatDate, formatDuration, formatNumber, formatTimeRange, formatTimestamp } from '@/lib/format';
+import { useBookingPaths } from './paths';
 
 /** Shared with the admin booking page, so the wording follows whose booking it is. */
 export function StatusCallout({ b, meId, tz }: { b: Booking; meId: string; tz: string }) {
@@ -97,6 +99,7 @@ function CancelDialog({ b, open, onOpenChange }: { b: Booking; open: boolean; on
 }
 
 export function BookingDetailPage() {
+  const paths = useBookingPaths();
   const { bookingId } = useParams();
   const me = useMe();
   const now = useCampusNow();
@@ -125,7 +128,7 @@ export function BookingDetailPage() {
           message="It may have been removed, or you may not have access."
           action={
             <Button asChild>
-              <Link to="/bookings">My bookings</Link>
+              <Link to={paths.list}>My bookings</Link>
             </Button>
           }
         />
@@ -155,7 +158,7 @@ export function BookingDetailPage() {
   type Action = { key: string; label: string; icon: React.ReactNode; variant: 'default' | 'outline' | 'destructive-outline'; to?: string; onClick?: () => void; loading?: boolean };
   const items: Action[] = [];
   if (p.canDownloadConfirmation) items.push({ key: 'pdf', label: 'Download confirmation', icon: <Download />, variant: 'default', onClick: download, loading: downloading });
-  if (p.canEdit) items.push({ key: 'edit', label: 'Edit booking', icon: <Pencil />, variant: 'outline', to: `/bookings/${b.id}/edit` });
+  if (p.canEdit) items.push({ key: 'edit', label: 'Edit booking', icon: <Pencil />, variant: 'outline', to: paths.edit(b.id) });
   if (p.canCancel)
     items.push({
       key: 'cancel',
@@ -165,7 +168,7 @@ export function BookingDetailPage() {
       onClick: () => setCancelOpen(true),
     });
   if (p.canRebook && finalOrPast)
-    items.push({ key: 'again', label: 'Book again', icon: <Repeat />, variant: 'outline', to: `/bookings/new?venueId=${b.venue.id}&purpose=${encodeURIComponent(b.purpose)}` });
+    items.push({ key: 'again', label: 'Book again', icon: <Repeat />, variant: 'outline', to: paths.create(`?venueId=${b.venue.id}&purpose=${encodeURIComponent(b.purpose)}`) });
 
   const renderButton = (a: Action, extra = '') =>
     a.to ? (
@@ -189,7 +192,7 @@ export function BookingDetailPage() {
 
   return (
     <div className="pb-24 lg:pb-0">
-      <PageHeader title="Booking details" breadcrumb={[{ label: 'My bookings', to: '/bookings' }, { label: b.reference }]} className="mb-5" />
+      <PageHeader title="Booking details" breadcrumb={[{ label: 'My bookings', to: paths.list }, { label: b.reference }]} className="mb-5" />
       <div className="grid gap-6 lg:grid-cols-12">
         <div className="grid min-w-0 gap-5 lg:col-span-8">
           <section className="card overflow-hidden">
@@ -214,7 +217,7 @@ export function BookingDetailPage() {
           <SectionCard title="Booking details" bodyClassName="grid gap-x-6 sm:grid-cols-2">
             <InfoRow icon={Building2} label="Venue">
               {b.venue.isActive ? (
-                <Link to={`/venues/${b.venue.id}`} className="font-semibold text-primary hover:underline">
+                <Link to={paths.venue(b.venue.id)} className="font-semibold text-primary hover:underline">
                   {b.venue.name}
                 </Link>
               ) : (
@@ -225,12 +228,13 @@ export function BookingDetailPage() {
                 {b.venue.locationDetails ? ` · ${b.venue.locationDetails}` : ''}
               </span>
             </InfoRow>
-            <InfoRow icon={CalendarDays} label="Date">
-              <span className="tabular">{formatLongDate(b.date)}</span>
+            <InfoRow icon={CalendarDays} label={b.days > 1 ? 'Dates' : 'Date'}>
+              <span className="tabular">{formatBookingLongDates(b)}</span>
             </InfoRow>
             <InfoRow icon={Clock} label="Time">
               <span className="tabular">
                 {formatTimeRange(b.startTime, b.endTime)} · {formatDuration(b.durationMinutes)}
+                {b.days > 1 ? ' daily' : ''}
               </span>
             </InfoRow>
             <InfoRow icon={UsersRound} label="Expected attendees">

@@ -17,9 +17,10 @@ const state = (status: ComplaintStatus, extra: Partial<Parameters<typeof staffPe
 const on = (p: ComplaintPermissions) => (Object.keys(p) as (keyof ComplaintPermissions)[]).filter((k) => p[k]).sort();
 
 describe('complaint permissions', () => {
-  it('reporter: approve/reject while awaiting, withdraw while pending, nothing else', () => {
-    expect(on(reporterPermissions(state('pending_review'), 7))).toEqual(['canWithdraw']);
-    expect(on(reporterPermissions(state('in_progress'), 7))).toEqual([]);
+  it('reporter: approve/reject while awaiting, withdraw while pending, move it to another department while open', () => {
+    expect(on(reporterPermissions(state('pending_review'), 7))).toEqual(['canReassign', 'canWithdraw']);
+    expect(on(reporterPermissions(state('in_progress'), 7))).toEqual(['canReassign']);
+    expect(on(reporterPermissions(state('in_progress', { reassignmentRequested: true }), 7))).toEqual(['canDismissReassignment', 'canReassign']);
     expect(on(reporterPermissions(state('awaiting_confirmation'), 7))).toEqual(['canApprove', 'canReject']);
     expect(on(reporterPermissions(state('resolved'), 7))).toEqual([]);
     expect(on(reporterPermissions(state('closed'), 7))).toEqual([]);
@@ -36,22 +37,24 @@ describe('complaint permissions', () => {
     expect(reporterReopenUntil(auto(2), 0)).toBeNull();
   });
 
-  it('staff: start, complete, reopen and request reassignment by status', () => {
-    expect(on(staffPermissions(state('pending_review')))).toEqual(['canRequestReassignment', 'canStart']);
-    expect(on(staffPermissions(state('in_progress')))).toEqual(['canComplete', 'canRequestReassignment']);
-    expect(on(staffPermissions(state('in_progress', { reassignmentRequested: true })))).toEqual(['canComplete']);
+  it('staff: start, complete, reopen, ask to move and close by status', () => {
+    expect(on(staffPermissions(state('pending_review')))).toEqual(['canClose', 'canRequestReassignment', 'canStart']);
+    expect(on(staffPermissions(state('in_progress')))).toEqual(['canClose', 'canComplete', 'canRequestReassignment']);
+    expect(on(staffPermissions(state('in_progress', { reassignmentRequested: true })))).toEqual(['canClose', 'canComplete']);
     expect(on(staffPermissions(state('awaiting_confirmation')))).toEqual([]);
     expect(on(staffPermissions(state('resolved')))).toEqual(['canReopen']);
     expect(on(staffPermissions(state('withdrawn')))).toEqual([]);
   });
 
-  it('admin: staff actions + reassign/close; reporter actions only on their own complaint', () => {
-    expect(on(adminPermissions(state('pending_review'), false))).toEqual(['canClose', 'canReassign', 'canStart']);
-    expect(on(adminPermissions(state('pending_review'), true))).toEqual(['canClose', 'canReassign', 'canStart', 'canWithdraw']);
-    expect(on(adminPermissions(state('awaiting_confirmation'), false))).toEqual(['canClose']);
-    expect(on(adminPermissions(state('awaiting_confirmation'), true))).toEqual(['canApprove', 'canClose', 'canReject']);
-    expect(on(adminPermissions(state('resolved'), true))).toEqual(['canReopen']);
-    expect(on(adminPermissions(state('closed'), false))).toEqual([]);
+  it('admin: monitors only; on their own complaint they have the reporter actions', () => {
+    for (const s of ['pending_review', 'in_progress', 'awaiting_confirmation', 'resolved', 'closed'] as const) {
+      expect(on(adminPermissions(state(s, { reassignmentRequested: true }), false))).toEqual([]);
+    }
+    expect(on(adminPermissions(state('pending_review'), true))).toEqual(['canReassign', 'canWithdraw']);
+    expect(on(adminPermissions(state('awaiting_confirmation'), true))).toEqual(['canApprove', 'canReject']);
+    const now = new Date();
+    const auto = state('resolved', { autoResolved: true, resolvedAt: new Date(now.getTime() - DAY) });
+    expect(on(adminPermissions(auto, true, 7))).toEqual(['canReopen']);
   });
 
   it('auto-resolve date only while awaiting and enabled', () => {

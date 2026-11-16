@@ -17,6 +17,7 @@ import { listMeta, offsetOf, Where } from '../../db/sql.js';
 import { appError } from '../../errors/app-error.js';
 import type { Actor } from '../../middleware/authenticate.js';
 import { loadCampus } from '../../domain/settings.js';
+import { addDays, diffDays } from '@campushub/shared';
 import { assertSlot, minutesUntil, modificationClosedMessage, startLdt } from '../../domain/booking-rules.js';
 import { publish } from '../notifications/notifier.js';
 import {
@@ -55,6 +56,37 @@ function throwHardConflicts(c: ConflictResult): void {
       { field: 'startTime', bookingId: own.id, reference: own.reference, status: own.status },
     );
   }
+}
+
+/**
+ * After a booking was set to cancelled: offer a confirmed booking's time to the queue (FIFO), then tell the member what
+ * happened (venue, status, and whether the time went to the next in line or is free again), and announce the result
+ * (a promotion is a new booking; a free time is "available again" for everyone).
+ */
+export async function cancelAndOfferSlot(
+  tx: Tx,
+  c: {
+    id: string;
+    venueId: string;
+    previousStatus: 'confirmed' | 'queued';
+    cancelledBy: 'requester' | 'admin' | 'system';
+    actorId: string | null;
+    note?: string | null;
+    /** Blocks and deactivations: the time is not bookable, so nothing is offered or announced. */
+    slotUnavailable?: boolean;
+  },
+): Promise<string[]> {
+  const promoted = c.previousStatus === 'confirmed' && !c.slotUnavailable ? await promoteQueue(tx, c.venueId) : [];
+  const slot =
+    c.previousStatus === 'queued' ? 'left_queue' : c.slotUnavailable ? 'unavailable' : promoted.length ? 'queue' : 'free';
+  await publish(tx, {
+    type: 'booking.cancelled',
+    bookingId: c.id,
+    actorId: c.actorId,
+    data: { cancelledBy: c.cancelledBy, previousStatus: c.previousStatus, note: c.note ?? null, slot },
+  });
+  for (const bookingId of promoted) await publish(tx, { type: 'booking.promoted', bookingId, actorId: c.actorId });
+  return promoted;
 }
 
 /** Promotes the venue's queue and notifies everyone who got a slot. */
@@ -100,14 +132,17 @@ export async function createBooking(
   let id: string;
   try {
     id = await withTransaction({ actorId: actor.id }, async (tx) => {
-      // Member first (the upcoming-bookings limit), then the venue: the same order as every other writer.
-      await tx.query('select id from public.profiles where id = $1 for update', [actor.id]);
+      // Member first (the upcoming-bookings limit), then the venue: the same order as every other writer. NO KEY UPDATE
+      // serialises this member's requests without blocking foreign-key checks (notifications addressed to them).
+      await tx.query('select id from public.profiles where id = $1 for no key update', [actor.id]);
       const venue = (await tx.query('select * from public.venues where id = $1 for update', [body.venueId])).rows[0];
       if (!venue) throw appError('VENUE_NOT_FOUND', "This venue doesn't exist.", { field: 'venueId' });
       if (!venue.is_active) throw appError('VENUE_INACTIVE', undefined, { field: 'venueId' });
 
       const { settings, localNow } = await loadCampus(tx);
-      assertSlot(body, settings, localNow);
+      // Multi-day: the same window on every day from date to endDate (one day when endDate is absent).
+      const slot = { date: body.date, endDate: body.endDate || body.date, startTime: body.startTime, endTime: body.endTime };
+      assertSlot(slot, settings, localNow);
 
       const attendees = body.expectedAttendees ?? null;
       if (attendees !== null && attendees > venue.capacity) {
@@ -132,15 +167,16 @@ export async function createBooking(
         );
       }
 
-      const c = await findConflicts(tx, body.venueId, body.date, body.startTime, body.endTime, actor.id);
+      const c = await findConflicts(tx, body.venueId, slot, actor.id);
       throwHardConflicts(c);
+      // All days or nothing: one booked day queues the whole request.
       const status = c.bookings.length ? 'queued' : 'confirmed';
 
       const ins = await tx.query<{ id: string }>(
-        `insert into public.bookings (venue_id, requester_id, booking_date, start_time, end_time, purpose, expected_attendees,
+        `insert into public.bookings (venue_id, requester_id, booking_date, end_date, start_time, end_time, purpose, expected_attendees,
                                       id_number, status, idempotency_key)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
-        [body.venueId, actor.id, body.date, body.startTime, body.endTime, body.purpose, attendees, body.idNumber, status, idempotencyKey],
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
+        [body.venueId, actor.id, slot.date, slot.endDate, body.startTime, body.endTime, body.purpose, attendees, body.idNumber, status, idempotencyKey],
       );
       const newId = ins.rows[0]!.id;
       // Everyone already queued for this time arrived earlier, so the new request goes behind all of them.
@@ -158,7 +194,7 @@ export async function createBooking(
       if (existing) return { booking: await getMemberBooking(actor.id, existing), replay: true };
     }
     if (err?.code === '23P01' && err?.constraint === 'bookings_no_overlap') {
-      const c = await findConflicts(pool, body.venueId, body.date, body.startTime, body.endTime, actor.id);
+      const c = await findConflicts(pool, body.venueId, { ...body, endDate: body.endDate || body.date }, actor.id);
       throw appError('BOOKING_CONFLICT', CONFLICT_MESSAGE, { field: 'startTime', conflicts: c.bookings });
     }
     throw err;
@@ -206,15 +242,20 @@ export async function updateBooking(actor: Actor, id: string, body: BookingUpdat
       throw appError('VENUE_INACTIVE', 'This venue is no longer accepting changes. You can still cancel this booking.');
     }
 
+    // Moving the first day keeps the number of days unless a new end date is given.
+    const curDays = diffDays(cur.end_date, cur.date);
+    const nextDate = body.date ?? cur.date;
     const next = {
-      date: body.date ?? cur.date,
+      date: nextDate,
+      endDate: body.endDate ?? (body.date ? addDays(nextDate, curDays) : cur.end_date),
       startTime: body.startTime ?? cur.st,
       endTime: body.endTime ?? cur.et,
       purpose: body.purpose ?? cur.purpose,
       expectedAttendees: body.expectedAttendees !== undefined ? body.expectedAttendees : cur.expected_attendees,
       idNumber: body.idNumber ?? cur.id_number,
     };
-    const slotChanged = next.date !== cur.date || next.startTime !== cur.st || next.endTime !== cur.et;
+    const slotChanged =
+      next.date !== cur.date || next.endDate !== cur.end_date || next.startTime !== cur.st || next.endTime !== cur.et;
     const changed =
       slotChanged ||
       next.purpose !== cur.purpose ||
@@ -226,7 +267,7 @@ export async function updateBooking(actor: Actor, id: string, body: BookingUpdat
     let requeue = false;
     if (slotChanged) {
       assertSlot(next, settings, localNow);
-      const c = await findConflicts(tx, venueId, next.date, next.startTime, next.endTime, actor.id, id);
+      const c = await findConflicts(tx, venueId, next, actor.id, id);
       throwHardConflicts(c);
       if (cur.status === 'confirmed' && c.bookings.length) {
         throw appError(
@@ -254,9 +295,9 @@ export async function updateBooking(actor: Actor, id: string, body: BookingUpdat
     await tx.query(
       `update public.bookings
           set booking_date = $2, start_time = $3, end_time = $4, purpose = $5, expected_attendees = $6, id_number = $7,
-              status = $8, queued_at = case when $9::boolean then clock_timestamp() else queued_at end
+              status = $8, queued_at = case when $9::boolean then clock_timestamp() else queued_at end, end_date = $10
         where id = $1`,
-      [id, next.date, next.startTime, next.endTime, next.purpose, next.expectedAttendees, next.idNumber, status, requeue],
+      [id, next.date, next.startTime, next.endTime, next.purpose, next.expectedAttendees, next.idNumber, status, requeue, next.endDate],
     );
     await publish(tx, { type: 'booking.modified', bookingId: id, actorId: actor.id, data: { previousStatus: cur.status } });
     if (slotChanged) await promoteAndNotify(tx, venueId, actor.id);
@@ -295,20 +336,14 @@ export async function cancelBooking(actor: Actor, id: string, body: { reason?: s
     if (cur.status === 'queued' && minutesUntil(startLdt(cur.date, cur.st), localNow) <= 0) {
       throw appError('CANCELLATION_WINDOW_CLOSED', 'This queued request expired when the booking time started.');
     }
-    if (cur.status === 'confirmed' && minutesUntil(startLdt(cur.date, cur.et), localNow) <= 0) {
+    if (cur.status === 'confirmed' && minutesUntil(startLdt(cur.end_date, cur.et), localNow) <= 0) {
       throw appError('CANCELLATION_WINDOW_CLOSED', 'This booking has already ended.');
     }
     await tx.query(
       `update public.bookings set status = 'cancelled', cancelled_by = $2, cancelled_at = now(), cancellation_reason = $3 where id = $1`,
       [id, actor.id, body.reason || null],
     );
-    await publish(tx, {
-      type: 'booking.cancelled',
-      bookingId: id,
-      actorId: actor.id,
-      data: { cancelledBy: 'requester', previousStatus: cur.status },
-    });
-    if (cur.status === 'confirmed') await promoteAndNotify(tx, venueId, actor.id);
+    await cancelAndOfferSlot(tx, { id, venueId, previousStatus: cur.status, cancelledBy: 'requester', actorId: actor.id, note: body.reason || null });
   });
   return getMemberBooking(actor.id, id);
 }
@@ -327,7 +362,7 @@ export async function listMyBookings(
     w.add(q.scope === 'upcoming' ? UPCOMING_SQL(`${now}::timestamp`) : `not ${UPCOMING_SQL(`${now}::timestamp`)}`);
   }
   if (q.status?.length) w.add('b.status = any($?::text[])', q.status);
-  if (q.from) w.add('b.booking_date >= $?::date', q.from);
+  if (q.from) w.add('b.end_date >= $?::date', q.from);
   if (q.to) w.add('b.booking_date <= $?::date', q.to);
   const sort = q.sort ?? (q.scope === 'upcoming' ? 'start:asc' : 'start:desc');
   const order = sort === 'start:asc' ? 'b.booking_date asc, b.start_time asc' : 'b.booking_date desc, b.start_time desc';
@@ -363,7 +398,7 @@ export async function memberDashboard(requesterId: string): Promise<MemberDashbo
   const counts = (
     await pool.query(
       `select count(*) filter (where b.status = 'queued' and (b.booking_date + b.start_time) > $2::timestamp) as queued,
-              count(*) filter (where b.status = 'confirmed' and (b.booking_date + b.end_time) > $2::timestamp) as upcoming_confirmed,
+              count(*) filter (where b.status = 'confirmed' and (b.end_date + b.end_time) > $2::timestamp) as upcoming_confirmed,
               count(*) filter (where not ${UPCOMING_SQL('$2::timestamp')}) as history
          from public.bookings b where b.requester_id = $1`,
       [requesterId, now],

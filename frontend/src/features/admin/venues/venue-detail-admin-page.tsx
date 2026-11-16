@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
-import { CalendarClock, Construction, MapPin, Megaphone, MoreHorizontal, Pencil, Plus, Power, PowerOff, Trash2 } from 'lucide-react';
+import { CalendarClock, CalendarPlus, Construction, MapPin, Megaphone, MoreHorizontal, Pencil, Plus, Power, PowerOff, Trash2 } from 'lucide-react';
 import { BLOCK_TYPE_LABELS, VENUE_TYPE_LABELS, type AdminBookingListItem, type VenueBlock } from '@campushub/shared';
 import { isApiError } from '@/lib/api-client';
-import { formatDate, formatShortDay, formatTimeRange, formatNumber } from '@/lib/format';
+
 import { useDocumentTitle, useIsMdUp } from '@/hooks/misc';
 import { Button } from '@/components/ui/button';
 import { Skeleton, Switch, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/controls';
@@ -25,6 +25,7 @@ import { CancelBookingDialog } from '../bookings/cancel-booking-dialog';
 import { AdminCalendar } from '../calendar/admin-calendar-page';
 import { useAdminComplaints } from '@/features/complaints/api';
 import { ComplaintsTable } from '@/features/complaints/components/complaints-table';
+import { formatBookingDates, formatBookingWhen, formatNumber, formatShortDay, formatTimeRange } from '@/lib/format';
 
 /** F-25: complaints linked to this venue (C15 filtered by venueId). */
 function IssuesTab({ venueId }: { venueId: string }) {
@@ -229,6 +230,13 @@ export default function VenueDetailAdminPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {v.isActive && (
+              <Button asChild>
+                <Link to={`/admin/book?venueId=${v.id}`}>
+                  <CalendarPlus /> Book
+                </Link>
+              </Button>
+            )}
             <Button variant="outline" asChild>
               <Link to={`/admin/venues/${v.id}/edit`}>
                 <Pencil /> Edit
@@ -278,7 +286,7 @@ export default function VenueDetailAdminPage() {
             <StatCard icon={CalendarClock} tone="approved" label="Upcoming confirmed" value={v.stats.upcomingConfirmedCount} />
             <StatCard icon={CalendarClock} tone="pending" label="In queue" value={v.stats.queuedCount} />
             <StatCard icon={CalendarClock} tone="neutral" label="Total bookings" value={v.stats.totalBookings} />
-            <StatCard icon={CalendarClock} tone="teal" label="Next booking" value={next ? formatDate(next.date) : '—'} detail={next ? formatTimeRange(next.startTime, next.endTime) : 'Nothing scheduled'} />
+            <StatCard icon={CalendarClock} tone="teal" label="Next booking" value={next ? formatBookingDates(next) : '—'} detail={next ? formatTimeRange(next.startTime, next.endTime) : 'Nothing scheduled'} />
           </div>
           <div className="grid gap-5 lg:grid-cols-2">
             <SectionCard title="About this space">
@@ -314,7 +322,7 @@ export default function VenueDetailAdminPage() {
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-semibold text-ink">{b.requester.fullName}</span>
                           <span className="tabular block text-[12.5px] text-muted">
-                            {formatDate(b.date)} · {formatTimeRange(b.startTime, b.endTime)}
+                            {formatBookingWhen(b)}
                           </span>
                         </span>
                         <StatusBadge status={b.status} size="sm" />

@@ -209,6 +209,9 @@ const adC = await api(ad, '/admin/complaints?pageSize=50');
 const adCr = adC.find((c) => c.reassignmentRequested) ?? adC[0];
 const users = await api(ad, '/admin/users?pageSize=50');
 const user = users.find((u) => u.role === 'department_staff') ?? users[0];
+// A three-day range 20 days out for the multi-day form.
+const dayOut = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+const multiQuery = `venueId=${venue.id}&date=${dayOut(20)}&endDate=${dayOut(22)}&start=10:00&end=12:00`;
 
 const ROUTES = {
   public: [
@@ -219,7 +222,7 @@ const ROUTES = {
     ['dashboard', '/dashboard'], ['venues', '/venues'], ['venue', `/venues/${venue.id}`], ['venue-avail', `/venues/${venue.id}?tab=availability`],
     ['bookings', '/bookings'], ['history', '/bookings/history'], ['book-new', `/bookings/new?venueId=${venue.id}`],
     ['booking', `/bookings/${bk.id}`], ['booking-edit', `/bookings/${editable.id}/edit`], ['booking-submitted', `/bookings/${bk.id}/submitted`],
-    ['profile', '/profile'], ['notifications', '/notifications'],
+    ['profile', '/profile'], ['notifications', '/notifications'], ['suggestions', '/suggestions'], ['book-multi', `/bookings/new?${multiQuery}`],
     ['complaints', '/complaints'], ['complaints-closed', '/complaints?tab=closed'], ['complaint-new', '/complaints/new'],
     ['complaint-await', `/complaints/${cAwait.id}`], ['complaint-photos', `/complaints/${cPhotos.id}`],
   ],
@@ -235,6 +238,7 @@ const ROUTES = {
     ['reports', '/admin/reports'], ['reports-c', '/admin/reports?tab=complaints'], ['settings', '/admin/settings'], ['audit', '/admin/settings/audit-log'],
     ['complaints', '/admin/complaints'], ['complaint-new', '/admin/complaints/new'], ['complaint', `/admin/complaints/${adCr.id}`],
     ['setup', '/admin/complaint-setup'], ['setup-cat', '/admin/complaint-setup?tab=categories'], ['profile', '/admin/profile'], ['notifications', '/admin/notifications'],
+    ['my-bookings', '/admin/my-bookings'], ['admin-book', `/admin/book?${multiQuery}`], ['suggestions', '/admin/suggestions'],
   ],
 };
 

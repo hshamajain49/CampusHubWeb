@@ -4,25 +4,20 @@ import {
   COMPLAINT_OVERDUE_DAYS,
   COMPLAINT_STATUSES,
   OPEN_COMPLAINT_STATUSES,
-  type AdminCloseBody,
-  type AdminReassignBody,
   type Complaint,
   type ComplaintKpis,
   type ComplaintStatusCounts,
   type ComplaintSummary,
 } from '@campushub/shared';
 import { pool } from '../../db/pool.js';
-import { withTransaction } from '../../db/transaction.js';
 import { likePattern, listMeta, offsetOf, Where } from '../../db/sql.js';
 import { appError, validationError } from '../../errors/app-error.js';
 import type { Actor } from '../../middleware/authenticate.js';
 import { loadCampus } from '../../domain/settings.js';
 import { toCsv } from '../../lib/csv.js';
 import { campusIsoMinute } from '../../lib/format.js';
-import { audit } from '../audit/audit-writer.js';
 import { COMPLAINT_SELECT, loadComplaintRow } from '../complaints/complaint.queries.js';
 import { toComplaint, toComplaintSummary } from '../complaints/complaint.mapper.js';
-import { assertStatus, assertVersion, lockComplaint } from '../complaints/complaint-guards.js';
 
 const OPEN = [...OPEN_COMPLAINT_STATUSES] as string[];
 
@@ -128,78 +123,6 @@ export async function getAdminComplaint(actor: Actor, id: string): Promise<Compl
   if (!row) throw appError('COMPLAINT_NOT_FOUND');
   const { settings } = await loadCampus(pool);
   return toComplaint(pool, row, settings, { kind: 'admin', actorId: actor.id });
-}
-
-// ─────────────────────────── CA-4 / CA-5 reassign or dismiss (C21) ───────────────────────────
-export async function reassignComplaint(actor: Actor, id: string, body: AdminReassignBody): Promise<Complaint> {
-  await withTransaction({ actorId: actor.id, note: body.note }, async (tx) => {
-    const cur = await lockComplaint(tx, id);
-    if (body.dismiss) {
-      if (!cur.reassignment_requested) throw validationError({}, 'There is no reassignment request to dismiss.');
-      assertVersion(cur, body.version);
-      await tx.query(
-        `update public.complaints set reassignment_requested = false, reassignment_note = null, reassignment_suggested_category_id = null where id = $1`,
-        [id],
-      );
-      await audit(tx, actor, {
-        action: 'complaint.reassignment_dismissed',
-        entityType: 'complaint',
-        entityId: id,
-        summary: `Dismissed the reassignment request on ${cur.reference}`,
-      });
-      return;
-    }
-    assertStatus(cur, ['pending_review', 'in_progress'], 'Only new or in-progress complaints can be reassigned.');
-    assertVersion(cur, body.version);
-    if (body.categoryId === cur.category_id) throw validationError({ categoryId: ['Choose a different category.'] }, 'Choose a different category.');
-    const cat = (
-      await tx.query(
-        `select c.id, c.name, c.department_id, d.name as department_name from public.complaint_categories c
-           join public.service_departments d on d.id = c.department_id
-          where c.id = $1 and c.is_active and d.is_active`,
-        [body.categoryId],
-      )
-    ).rows[0];
-    if (!cat) throw appError('CATEGORY_INACTIVE', undefined, { field: 'categoryId' });
-    await tx.query(`update public.complaints set category_id = $2, department_id = $3, status = 'pending_review' where id = $1`, [
-      id,
-      cat.id,
-      cat.department_id,
-    ]);
-    await audit(tx, actor, {
-      action: 'complaint.reassigned',
-      entityType: 'complaint',
-      entityId: id,
-      summary: `Reassigned ${cur.reference} to ${cat.department_name}`,
-      metadata: {
-        from: { categoryId: cur.category_id, departmentId: cur.department_id },
-        to: { categoryId: cat.id, departmentId: cat.department_id },
-      },
-    });
-  });
-  return getAdminComplaint(actor, id);
-}
-
-// ─────────────────────────── CA-6 close (C22) ───────────────────────────
-export async function closeComplaint(actor: Actor, id: string, body: AdminCloseBody): Promise<Complaint> {
-  await withTransaction({ actorId: actor.id, note: body.reason }, async (tx) => {
-    const cur = await lockComplaint(tx, id);
-    assertStatus(cur, ['pending_review', 'in_progress', 'awaiting_confirmation']);
-    assertVersion(cur, body.version);
-    await tx.query(`update public.complaints set status = 'closed', closure_type = $2, closure_reason = $3 where id = $1`, [
-      id,
-      body.closureType,
-      body.reason,
-    ]);
-    await audit(tx, actor, {
-      action: 'complaint.closed',
-      entityType: 'complaint',
-      entityId: id,
-      summary: `Closed ${cur.reference} (${body.closureType})`,
-      metadata: { closureType: body.closureType },
-    });
-  });
-  return getAdminComplaint(actor, id);
 }
 
 // ─────────────────────────── dashboard (E17) ───────────────────────────

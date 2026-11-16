@@ -41,6 +41,7 @@ function eventTitle(h: HistoryEntry, by: string): string {
 
 const FIELD_LABELS: Record<string, string> = {
   date: 'Date',
+  endDate: 'Last day',
   startTime: 'Start',
   endTime: 'End',
   purpose: 'Purpose',
@@ -50,7 +51,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 function changeValue(field: string, v: unknown): string {
   if (v === null || v === undefined || v === '') return '—';
-  if (field === 'date' && typeof v === 'string') return formatShortDay(v);
+  if ((field === 'date' || field === 'endDate') && typeof v === 'string') return formatShortDay(v);
   if (field === 'purpose' && typeof v === 'string') return v.length > 40 ? `${v.slice(0, 40)}…` : v;
   return String(v);
 }

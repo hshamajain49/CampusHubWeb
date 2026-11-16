@@ -14,7 +14,6 @@ import { likePattern, listMeta, offsetOf, Where } from '../../db/sql.js';
 import { appError } from '../../errors/app-error.js';
 import type { Actor } from '../../middleware/authenticate.js';
 import { loadCampus } from '../../domain/settings.js';
-import { audit } from '../audit/audit-writer.js';
 import { COMPLAINT_SELECT, loadComplaintRow } from '../complaints/complaint.queries.js';
 import { toComplaint, toComplaintSummary } from '../complaints/complaint.mapper.js';
 import { assertStatus, assertVersion, lockComplaint } from '../complaints/complaint-guards.js';
@@ -118,16 +117,11 @@ export async function getDepartmentComplaint(departmentId: string, id: string): 
   return toComplaint(pool, row, settings, { kind: 'staff' });
 }
 
-// ─────────────────────────── CA-3 work actions (staff C11–C13, admin C18–C20) ───────────────────────────
-/** Staff act within their department; the admin acts on any department and is audited. */
-export type WorkScope = { kind: 'staff'; departmentId: string } | { kind: 'admin' };
+// ─────────────────────────── CA-3 work actions (staff C11–C14) ───────────────────────────
+// Only the department the complaint is assigned to manages the work; the Super Admin monitors (no work actions).
+export type WorkScope = { kind: 'staff'; departmentId: string };
 
-const lockScope = (scope: WorkScope) => (scope.kind === 'staff' ? { departmentId: scope.departmentId } : {});
-
-async function adminAudit(tx: Parameters<typeof audit>[0], actor: Actor, scope: WorkScope, action: string, cur: any, summary: string) {
-  if (scope.kind !== 'admin') return;
-  await audit(tx, actor, { action, entityType: 'complaint', entityId: cur.id, summary: `${summary} ${cur.reference}`, metadata: { departmentId: cur.department_id } });
-}
+const lockScope = (scope: WorkScope) => ({ departmentId: scope.departmentId });
 
 export async function startWork(actor: Actor, scope: WorkScope, id: string, body: { version: number; note: string | null }): Promise<void> {
   await withTransaction({ actorId: actor.id, note: body.note }, async (tx) => {
@@ -135,7 +129,6 @@ export async function startWork(actor: Actor, scope: WorkScope, id: string, body
     assertStatus(cur, ['pending_review'], cur.status === 'in_progress' ? 'Work has already started on this complaint.' : undefined);
     assertVersion(cur, body.version);
     await tx.query(`update public.complaints set status = 'in_progress', handled_by = $2 where id = $1`, [id, actor.id]);
-    await adminAudit(tx, actor, scope, 'complaint.work_started', cur, 'Started work on');
   });
 }
 
@@ -153,7 +146,7 @@ export async function completeWork(
     [id],
   );
   const row = pre.rows[0];
-  if (!row || (scope.kind === 'staff' && row.department_id !== scope.departmentId)) throw appError('COMPLAINT_NOT_FOUND');
+  if (!row || row.department_id !== scope.departmentId) throw appError('COMPLAINT_NOT_FOUND');
   if (row.n + files.length > 3) {
     throw appError('TOO_MANY_FILES', `This complaint already has ${row.n} "after" photo${row.n === 1 ? '' : 's'}; up to 3 are allowed.`);
   }
@@ -169,7 +162,6 @@ export async function completeWork(
         [id, body.note, actor.id],
       );
       await insertAttachments(tx, id, 'resolution', prepared, actor.id);
-      await adminAudit(tx, actor, scope, 'complaint.work_completed', cur, 'Marked as done:');
     });
   } catch (err) {
     await discardPhotos(prepared);
@@ -183,11 +175,29 @@ export async function reopenWork(actor: Actor, scope: WorkScope, id: string, bod
     assertStatus(cur, ['resolved'], 'Only resolved complaints can be reopened.');
     assertVersion(cur, body.version);
     await tx.query(`update public.complaints set status = 'in_progress', handled_by = coalesce(handled_by, $2) where id = $1`, [id, actor.id]);
-    await adminAudit(tx, actor, scope, 'complaint.reopened', cur, 'Reopened');
   });
 }
 
-/** C14: flag a misrouted complaint for the administrator (CB-14). Staff only. */
+/** Close a duplicate, invalid or out-of-scope complaint (was the admin's CA-6; the department now decides). */
+export async function closeComplaint(
+  actor: Actor,
+  scope: WorkScope,
+  id: string,
+  body: { version: number; closureType: string; reason: string },
+): Promise<void> {
+  await withTransaction({ actorId: actor.id, note: body.reason }, async (tx) => {
+    const cur = await lockComplaint(tx, id, lockScope(scope));
+    assertStatus(cur, ['pending_review', 'in_progress'], 'Only new or in-progress complaints can be closed.');
+    assertVersion(cur, body.version);
+    await tx.query(`update public.complaints set status = 'closed', closure_type = $2, closure_reason = $3 where id = $1`, [
+      id,
+      body.closureType,
+      body.reason,
+    ]);
+  });
+}
+
+/** C14: ask the reporter to move a misrouted complaint to another department (CB-14). Staff only. */
 export async function requestReassignment(
   actor: Actor,
   departmentId: string,

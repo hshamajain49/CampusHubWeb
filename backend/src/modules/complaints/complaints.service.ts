@@ -12,7 +12,7 @@ import {
 import { pool } from '../../db/pool.js';
 import { withTransaction, type Tx } from '../../db/transaction.js';
 import { likePattern, listMeta, offsetOf, Where } from '../../db/sql.js';
-import { AppError, appError } from '../../errors/app-error.js';
+import { AppError, appError, validationError } from '../../errors/app-error.js';
 import type { Actor } from '../../middleware/authenticate.js';
 import { loadCampus } from '../../domain/settings.js';
 import { reporterReopenUntil } from '../../domain/complaint-rules.js';
@@ -77,7 +77,7 @@ export async function createComplaint(
   const prepared: PreparedPhotos = files.length ? await preparePhotos(id, files) : NO_PHOTOS;
   try {
     await withTransaction({ actorId: actor.id }, async (tx) => {
-      await tx.query('select id from public.profiles where id = $1 for update', [actor.id]);
+      await tx.query('select id from public.profiles where id = $1 for no key update', [actor.id]);
       const { settings } = await loadCampus(tx);
       const open = (
         await tx.query<{ n: number }>('select count(*) as n from public.complaints where reporter_id = $1 and status = any($2::text[])', [
@@ -219,6 +219,47 @@ export function withdrawComplaint(actor: Actor, id: string, body: { version: num
     // closure_reason holds the optional withdrawal reason; the history note keeps it either way.
     const reason = body.reason && [...body.reason].length >= 3 ? body.reason : null;
     await tx.query(`update public.complaints set status = 'withdrawn', closure_reason = $2 where id = $1`, [id, reason]);
+  });
+}
+
+/**
+ * The reporter moves their complaint to another category, and so another department. It goes back to that department's
+ * "new" queue (the trigger clears the handler and any pending move request); the timeline records who moved it.
+ */
+export function reassignComplaint(actor: Actor, id: string, body: { version: number; categoryId: string; note: string | null }) {
+  return reporterAction(actor, id, body.note, async (tx, cur) => {
+    assertStatus(cur, ['pending_review', 'in_progress'], 'Only new or in-progress complaints can be moved to another department.');
+    assertVersion(cur, body.version);
+    if (body.categoryId === cur.category_id) {
+      throw validationError({ categoryId: ['Choose a different category.'] }, 'Choose a different category.');
+    }
+    const cat = (
+      await tx.query(
+        `select c.id, c.department_id from public.complaint_categories c
+           join public.service_departments d on d.id = c.department_id
+          where c.id = $1 and c.is_active and d.is_active`,
+        [body.categoryId],
+      )
+    ).rows[0];
+    if (!cat) throw appError('CATEGORY_INACTIVE', undefined, { field: 'categoryId' });
+    await tx.query(`update public.complaints set category_id = $2, department_id = $3, status = 'pending_review' where id = $1`, [
+      id,
+      cat.id,
+      cat.department_id,
+    ]);
+  });
+}
+
+/** The reporter keeps the complaint with its department after the department asked to move it. */
+export function dismissReassignment(actor: Actor, id: string, body: { version: number; note: string | null }) {
+  return reporterAction(actor, id, body.note, async (tx, cur) => {
+    if (!cur.reassignment_requested) throw validationError({}, 'There is no request to move this complaint.');
+    assertStatus(cur, ['pending_review', 'in_progress']);
+    assertVersion(cur, body.version);
+    await tx.query(
+      `update public.complaints set reassignment_requested = false, reassignment_note = null, reassignment_suggested_category_id = null where id = $1`,
+      [id],
+    );
   });
 }
 

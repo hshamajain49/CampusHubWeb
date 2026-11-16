@@ -1,6 +1,6 @@
 // Request schemas for every endpoint (§15). Bodies are strict: unknown keys are rejected.
 import { z } from 'zod';
-import { AUDIT_ENTITY_TYPES, BLOCK_TYPES, BOOKING_STATUSES, MEMBER_ROLES, REMINDER_LEADS, ROLES, TIME_STEPS, VENUE_TYPES } from '../enums.js';
+import { AUDIT_ENTITY_TYPES, BLOCK_TYPES, BOOKING_STATUSES, MEMBER_ROLES, REMINDER_LEADS, ROLES, SUGGESTION_STATUSES, TIME_STEPS, VENUE_TYPES } from '../enums.js';
 import {
   boolFromQuery,
   csvOf,
@@ -182,6 +182,8 @@ export const availabilityQuery = z
 
 export const availabilityCheckQuery = z.object({
   date: isoDate,
+  /** Multi-day: last day (same time window every day). */
+  endDate: isoDate.optional(),
   startTime: timeSchema,
   endTime: timeSchema,
   excludeBookingId: uuid.optional(),
@@ -208,6 +210,8 @@ export const idNumberSchema = z
 export const bookingCreateBody = z.strictObject({
   venueId: uuid,
   date: isoDate,
+  /** Multi-day: last day, inclusive (omit or equal to date for one day). The time window repeats every day. */
+  endDate: isoDate.nullable().optional(),
   startTime: timeSchema,
   endTime: timeSchema,
   purpose: purposeSchema,
@@ -219,13 +223,14 @@ export const bookingUpdateBody = requireOne(
   z.strictObject({
     purpose: purposeSchema.optional(),
     date: isoDate.optional(),
+    endDate: isoDate.optional(),
     startTime: timeSchema.optional(),
     endTime: timeSchema.optional(),
     expectedAttendees: attendeesSchema.nullable().optional(),
     idNumber: idNumberSchema.optional(),
     version: z.number().int().min(1),
   }),
-  ['purpose', 'date', 'startTime', 'endTime', 'expectedAttendees', 'idNumber'],
+  ['purpose', 'date', 'endDate', 'startTime', 'endTime', 'expectedAttendees', 'idNumber'],
 );
 
 export const bookingCancelBody = z.strictObject({
@@ -431,6 +436,32 @@ export const settingsUpdateBody = requireOne(
   'Provide at least one setting to change.',
 );
 
+// ───────────────────────────── Suggestion box ─────────────────────────────
+export const suggestionCreateBody = z.strictObject({
+  subject: z.string().trim().min(3, 'Subject must be 3–120 characters').max(120, 'Subject must be 3–120 characters'),
+  message: z.string().trim().min(10, 'Please write at least 10 characters').max(2000, 'Keep it under 2,000 characters'),
+});
+export const mySuggestionsQuery = z.object({ ...pagination(20, 100) });
+export const adminSuggestionsQuery = z.object({
+  status: z.enum(SUGGESTION_STATUSES).optional(),
+  q: searchQ.optional(),
+  ...pagination(20, 100),
+});
+export const suggestionReviewBody = z.strictObject({
+  status: z.enum(SUGGESTION_STATUSES),
+  /** Reply shown to the author; null clears it. */
+  response: z
+    .union([z.string().trim().min(1, 'Write a reply or leave it empty').max(1000, 'Keep it under 1,000 characters'), z.literal('').transform(() => null), z.null()])
+    .optional(),
+});
+export const suggestionIdParam = z.object({ suggestionId: uuid });
+
+// ───────────────────────────── Account deletion ─────────────────────────────
+export const deleteAccountBody = z.strictObject({
+  password: z.string().min(1, 'Enter your password'),
+  confirm: z.literal('DELETE', { message: 'Type DELETE to confirm' }),
+});
+
 export const idParam = z.object({ id: uuid });
 export const venueIdParam = z.object({ venueId: uuid });
 export const bookingIdParam = z.object({ bookingId: uuid });
@@ -446,5 +477,7 @@ export type VenueUpdateBody = z.infer<typeof venueUpdateBody>;
 export type BlockCreateBody = z.infer<typeof blockCreateBody>;
 export type BlockUpdateBody = z.infer<typeof blockUpdateBody>;
 export type SettingsUpdateBody = z.infer<typeof settingsUpdateBody>;
+export type SuggestionCreateBody = z.infer<typeof suggestionCreateBody>;
+export type SuggestionReviewBody = z.infer<typeof suggestionReviewBody>;
 export type CreateUserBody = z.infer<typeof createUserBody>;
 export type UpdateUserBody = z.infer<typeof updateUserBody>;

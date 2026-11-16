@@ -235,7 +235,7 @@ export const ReporterReopenDialog = (p: Base) => (
 
 // CDG-07
 export function RequestReassignmentDialog(p: Base) {
-  const cats = useComplaintCategories();
+  const cats = useComplaintCategories(p.open);
   const [suggested, setSuggested] = React.useState('');
   React.useEffect(() => {
     if (p.open) setSuggested('');
@@ -246,14 +246,14 @@ export function RequestReassignmentDialog(p: Base) {
       {...p}
       action="request-reassignment"
       bodyKey="reason"
-      title="Request reassignment"
-      description="The administrator will move it to the right department. It stays in your queue, flagged, until then."
+      title="Ask to move this complaint"
+      description="The person who reported it decides whether to move it. It stays in your queue, flagged, until they do."
       label="Why doesn't this belong to your department?"
       placeholder="e.g. This is a water leak, not electrical."
       min={3}
       max={500}
       confirmLabel="Send request"
-      success="Reassignment requested."
+      success="Request sent to the reporter."
       extraBody={{ suggestedCategoryId: suggested || null }}
       extra={
         <Field label="Suggested category" optional>
@@ -334,10 +334,10 @@ export function CompleteWorkDialog({ c, scope, open, onOpenChange, onStale }: Om
   );
 }
 
-// CDG-08 (+ CA-5 dismiss)
+// CDG-08: the reporter moves their complaint to another category, and so another department.
 export function ReassignDialog({ c, open, onOpenChange, onStale }: Omit<Base, 'scope' | 'c'> & { c: Complaint }) {
-  const cats = useComplaintCategories();
-  const act = useComplaintAction('admin', c.id);
+  const cats = useComplaintCategories(open);
+  const act = useComplaintAction('reporter', c.id);
   const [categoryId, setCategoryId] = React.useState('');
   const [note, setNote] = React.useState('');
   const [touched, setTouched] = React.useState(false);
@@ -354,16 +354,17 @@ export function ReassignDialog({ c, open, onOpenChange, onStale }: Omit<Base, 's
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Reassign complaint"
-      confirmLabel="Reassign"
+      title="Move to another department"
+      description={`It's with ${c.department.name} now. Pick the category that fits: the category decides the department.`}
+      confirmLabel="Move complaint"
       confirmDisabled={n > 500}
       onConfirm={async () => {
         setTouched(true);
-        if (!categoryId || n < 3) throw new Error('Choose a new category and add a note.');
+        if (!categoryId) throw new Error('Choose where it belongs.');
         await guarded(
           async () => {
-            await act.mutateAsync({ action: 'reassign', body: { version: c.version, categoryId, note: note.trim() } });
-            toast.success('Complaint reassigned.');
+            const moved = await act.mutateAsync({ action: 'reassign', body: { version: c.version, categoryId, note: note.trim() || null } });
+            toast.success(`Moved to ${moved.department.name}.`);
           },
           onStale,
           () => onOpenChange(false),
@@ -371,42 +372,42 @@ export function ReassignDialog({ c, open, onOpenChange, onStale }: Omit<Base, 's
       }}
     >
       {c.reassignmentRequested && c.reassignmentNote && (
-        <Alert variant="info" title="Staff request">
+        <Alert variant="info" title={`${c.department.name} asked to move it`}>
           {c.reassignmentNote}
         </Alert>
       )}
-      <Field label="New category" error={touched && !categoryId ? 'Choose a category' : undefined} hint="The category decides the department.">
+      <Field label="New category" error={touched && !categoryId ? 'Choose a category' : undefined} hint="Shown as category → department.">
         {(p) => <Select id={p.id} invalid={!!p['aria-invalid']} value={categoryId} onValueChange={setCategoryId} placeholder="Choose a category" options={options} />}
       </Field>
-      <Field label="Note" error={touched && n < 3 ? 'Please add a note (at least 3 characters).' : n > 500 ? 'Keep it under 500 characters.' : undefined} hint={<span className="tabular">{n}/500</span>}>
-        {(p) => <Textarea {...p} rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Water leak — moved to Plumbing." />}
+      <Field label="Note" optional error={n > 500 ? 'Keep it under 500 characters.' : undefined} hint={<span className="tabular">{n}/500</span>}>
+        {(p) => <Textarea {...p} rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. It's a water leak, not electrical." />}
       </Field>
-      <Alert variant="info">The complaint returns to Pending Review in the new department.</Alert>
+      <Alert variant="info">The new department receives it as a new complaint (Pending Review).</Alert>
     </ConfirmDialog>
   );
 }
 
+/** The reporter keeps the complaint with its department after the department asked to move it. */
 export const DismissReassignmentDialog = (p: Omit<Base, 'scope'>) => (
   <TextActionDialog
     {...p}
-    scope="admin"
-    action="reassign"
+    scope="reporter"
+    action="dismiss-reassignment"
     bodyKey="note"
-    title="Dismiss the reassignment request?"
-    description="The complaint stays with its current department."
-    label="Note"
-    placeholder="e.g. Electrical issue after all."
-    min={3}
+    title={`Keep it with ${p.c.department.name}?`}
+    description="The department asked to move it. If you keep it here, they carry on with it."
+    label="Note for the department"
+    placeholder="e.g. It really is the socket that sparks."
+    min={0}
     max={500}
-    confirmLabel="Dismiss request"
-    success="Reassignment request dismissed."
-    extraBody={{ dismiss: true }}
+    confirmLabel="Keep it here"
+    success="The complaint stays with the department."
   />
 );
 
-// CDG-09
+// CDG-09: the department closes duplicates, invalid or out-of-scope complaints.
 export function CloseDialog({ c, open, onOpenChange, onStale }: Omit<Base, 'scope' | 'c'> & { c: Complaint }) {
-  const act = useComplaintAction('admin', c.id);
+  const act = useComplaintAction('staff', c.id);
   const [type, setType] = React.useState<ClosureType | ''>('');
   const [reason, setReason] = React.useState('');
   const [touched, setTouched] = React.useState(false);

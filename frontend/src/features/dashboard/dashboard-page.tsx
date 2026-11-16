@@ -1,10 +1,10 @@
 import { Link } from 'react-router';
-import { ArrowRight, CalendarCheck, CalendarDays, CalendarPlus, Clock, DoorOpen, History, ListOrdered, MapPin, Megaphone, ThumbsUp } from 'lucide-react';
+import { ArrowRight, CalendarCheck, CalendarDays, CalendarPlus, Clock, DoorOpen, History, Lightbulb, ListOrdered, MapPin, Megaphone, ThumbsUp } from 'lucide-react';
 import { useDocumentTitle } from '@/hooks/misc';
 import { useCampusNow, usePublicSettings } from '@/hooks/use-public-settings';
 import { useMe } from '@/providers/auth-provider';
 import { firstName } from '@/lib/utils';
-import { formatDate, formatLongDate, formatTimeRange, greetingFor } from '@/lib/format';
+
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/controls';
 import { RoleBadge, StatusBadge } from '@/components/common/badges';
@@ -16,12 +16,13 @@ import { DayAvailabilityBar } from '@/components/common/day-availability-bar';
 import { useMemberDashboard } from '@/features/bookings/api';
 import { Alert } from '@/components/ui/controls';
 import { CategoryTile, ComplaintStatusBadge } from '@/features/complaints/components/complaint-visuals';
-import { timeAgo } from '@/lib/format';
+import { formatBookingDates, formatLongDate, formatTimeRange, greetingFor, timeAgo } from '@/lib/format';
 
 const QUICK = [
   { to: '/venues', icon: CalendarPlus, title: 'Book a venue', text: 'Find and reserve a space', tone: 'bg-primary-soft text-primary' },
   { to: '/bookings', icon: CalendarDays, title: 'My bookings', text: 'Track your requests', tone: 'bg-secondary-soft text-secondary-text' },
   { to: '/complaints/new', icon: Megaphone, title: 'Report an issue', text: "Something broken? We'll route it", tone: 'bg-warning-soft text-warning-text' },
+  { to: '/suggestions', icon: Lightbulb, title: 'Suggestion box', text: 'Share an idea with the admin', tone: 'bg-surface-muted text-ink' },
 ];
 
 export function DashboardPage() {
@@ -145,7 +146,7 @@ export function DashboardPage() {
           <h2 id="quick-heading" className="eyebrow mb-2.5">
             Quick actions
           </h2>
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
             {QUICK.map((q) => (
               <Link key={q.to} to={q.to} className="card lift press group flex items-center gap-3.5 p-4">
                 <span className={`grid size-11 shrink-0 place-items-center rounded-[12px] ${q.tone}`}>
@@ -221,7 +222,7 @@ export function DashboardPage() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-ink">{b.venue.name}</span>
                     <span className="tabular block truncate text-[12.5px] text-muted">
-                      {formatDate(b.date)} · {b.purpose}
+                      {formatBookingDates(b)} · {b.purpose}
                     </span>
                   </span>
                   <StatusBadge status={b.status} size="sm" />

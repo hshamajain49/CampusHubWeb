@@ -5,10 +5,11 @@ import { FullScreenSpinner } from '@/components/ui/spinner';
 import { roleHome, useAuth } from '@/providers/auth-provider';
 
 export function RequireAuth({ allowPasswordChange = false }: { allowPasswordChange?: boolean }) {
-  const { status, profile } = useAuth();
+  const { status, profile, signOutTarget } = useAuth();
   const loc = useLocation();
   if (status === 'loading') return <FullScreenSpinner />;
   if (status === 'unauthenticated' || !profile) {
+    if (signOutTarget) return <Navigate to={signOutTarget} replace />;
     const login = loc.pathname.startsWith('/admin') ? '/admin/login' : '/login';
     return <Navigate to={`${login}?redirectTo=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
   }

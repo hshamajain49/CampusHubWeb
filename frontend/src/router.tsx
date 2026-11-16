@@ -74,6 +74,7 @@ const routes: RouteObject[] = [
                   { path: '/complaints', ...page(M.complaints, 'MyComplaintsPage') },
                   { path: '/complaints/new', ...page(M.complaints, 'NewComplaintPage') },
                   { path: '/complaints/:complaintId', ...page(M.complaints, 'ComplaintDetailPage') },
+                  { path: '/suggestions', ...page(M.suggestions, 'SuggestionBoxPage') },
                   {
                     element: <RequireRole roles={['department_staff']} />,
                     children: [
@@ -100,6 +101,14 @@ const routes: RouteObject[] = [
                   { path: '/admin/bookings', ...admin(A.bookings) },
                   { path: '/admin/bookings/:bookingId', ...admin(A.bookingDetail) },
                   { path: '/admin/calendar', ...admin(A.calendar) },
+                  // The Super Admin books venues with the member booking pages (links switch via useBookingPaths).
+                  { path: '/admin/book', ...page(M.bookingForms, 'NewBookingPage') },
+                  { path: '/admin/my-bookings', ...page(M.bookingLists, 'MyBookingsPage') },
+                  { path: '/admin/my-bookings/history', ...page(M.bookingLists, 'BookingHistoryPage') },
+                  { path: '/admin/my-bookings/:bookingId', ...page(M.bookingDetail, 'BookingDetailPage') },
+                  { path: '/admin/my-bookings/:bookingId/edit', ...page(M.bookingForms, 'EditBookingPage') },
+                  { path: '/admin/my-bookings/:bookingId/submitted', ...page(M.bookingSubmitted, 'BookingSubmittedPage') },
+                  { path: '/admin/suggestions', ...admin(A.suggestions) },
                   { path: '/admin/complaints', ...admin(A.complaints) },
                   { path: '/admin/complaints/new', ...admin(A.complaintNew) },
                   { path: '/admin/complaints/:complaintId', ...admin(A.complaintDetail) },
