@@ -10,8 +10,17 @@ regexTarget = "secret"
 regexes = [
   # Seeded demo accounts and the integration-test password (README, seed-dev.ts, tests, e2e/.env.example)
   '''^(Admin|Student|Faculty|Testing)12345$''',
-  # Fixed secrets for the throwaway local test database (backend/.env.test)
-  '''^test-(secret|cron)-[a-z0-9-]+$''',
+  # Fixed secrets for the throwaway local test database (backend/.env.test) and the fake Sentinel in tests
+  '''^test-(secret|cron|ingest-secret)-[a-z0-9-]+$''',
+  # Wrong / throwaway passwords used by tests, e2e and the security probe (security/scripts/probe.mjs)
+  '''^(E2e|Not-my|Definitely-wrong|Probe-Passw0rd)-[A-Za-z0-9-]+$''',
+  # The fake analytics site key in frontend/src/lib/analytics.test.ts
+  '''^sk_abcdefghijklmnopqrstuvwx$''',
+  # Code references and host names (config.SENTINEL_URL, env.VITE_X, campushub.vid, fcm.googleapis.com).
+  # The first segment is capped at 25 characters, which excludes JWTs (their header segment is 36+).
+  '''^[A-Za-z][A-Za-z0-9_]{0,24}(\.[A-Za-z0-9_-]{1,40}){1,3}$''',
+  # Plain camelCase identifiers made only of words (passwordSchema, pushSubscriptionBody)
+  '''^[a-z]+([A-Z][a-z]+)+$''',
   # Placeholders in *.env.example
   '''^replace-with-[a-z0-9-]+$''',
   # Code that reads a value from the environment, and env-var names in render.yaml

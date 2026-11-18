@@ -192,47 +192,13 @@ action bars respect safe areas, and inputs are 16 px so iOS doesn't zoom.
 
 ## Deployment
 
-- **API on Render** via `render.yaml` (free plan, Singapore, `/health` check). Secrets are prompted (`sync: false`).
-- **SPA on Cloudflare Pages**: build `npm run build -w @campushub/shared && npm run build -w @campushub/frontend`,
-  output `frontend/dist`, env `VITE_API_ORIGIN=<API URL>`. The build writes `dist/_headers` (CSP, HSTS, caching).
-- **Database and photos on Neon**, `production` branch (PostgreSQL 18, Singapore, same region as Render). Use the
-  **direct** connection string everywhere (API, migrations, backups): `neon connection-string production`. The API
-  connects as the least-privilege role `campushub_app` (see "Database roles" below). The object
-  storage values (`AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) come from
-  `neon env pull --branch production`. Migrate with
-  `DATABASE_URL=<direct url> npx dbmate --migrations-dir database/migrations --no-dump-schema up`.
-- **First Super Admin**: `neon env pull --branch production --file .env.production.local`, then
-  `npm run create-super-admin:prod -- --email you@college.edu --name "Your Name"`. It prints a one-time password
-  (changed at first sign-in). Don't prefix the plain `create-super-admin` with `DATABASE_URL=`: `backend/.env` wins
-  over shell variables, so it would write to the dev branch. The app itself only creates students and faculty, so
-  run this again for each extra Super Admin (an existing account's email is promoted instead).
-- **Complaint photos**: run `neon deploy` with the `production` branch pinned to create the private
-  `complaint-photos` bucket (`neon.ts`). The API uses the same `AWS_*` storage credentials as venue photos.
-- **Jobs**: cron-job.org calls `POST /internal/jobs/run` with `Authorization: Bearer <CRON_SECRET>` every 30 minutes
-  by day and hourly at night; `GET /health` every 14 minutes during campus hours keeps the free instance awake.
-- **CI** (`.github/workflows/ci.yml`): lint/typecheck → unit → db → integration → e2e, a secrets scan of the built
-  bundle plus gitleaks, then a gated deploy (migrate, then the Render deploy hook). `backup.yml` stores a weekly
-  GPG-encrypted `pg_dump`; `jobs-backup.yml` is an optional second scheduler.
+The API runs on Render (`render.yaml`), the website on Cloudflare Pages, and the database and photos on Neon
+(`production` branch, PostgreSQL 18). CI deploys the API after every check passes: migrations first, then the Render
+deploy hook. The API connects with the least-privilege role `campushub_app`.
 
-### Database roles
+**[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** is the runbook: settings and secrets, normal deploys, database roles,
+migrations, checking and rolling back a deploy, accounts, secret rotation, troubleshooting and free-plan limits.
 
-The API runs as `campushub_app`, which can read and write application data but can't change the schema, truncate
-tables, or edit or delete the audit log (`audit_logs` is append-only for every role). Migrations and backups keep
-using the owner role. The migration `20261118000100_least_privilege_rate_limits.sql` creates the role without a
-login; once per Neon branch:
-
-1. Generate a password: `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`.
-2. In the Neon SQL editor for that branch (or `psql` with the owner's direct URL), run
-   `alter role campushub_app with login password '<password>';`. Create it with SQL, not in the Neon console: roles
-   made in the console are added to `neon_superuser`.
-3. Set Render's `DATABASE_URL` to the owner's direct URL with the user and password replaced:
-   `postgresql://campushub_app:<password>@<direct host>/neondb?sslmode=require&channel_binding=require`.
-4. Leave GitHub's `PROD_DATABASE_URL` (migrations, backups) on the owner role.
-
-Required production secrets: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `FRONTEND_URL`, `CORS_ORIGINS`,
-`CRON_SECRET`, `AWS_ENDPOINT_URL_S3`/`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (Neon storage), plus
-`BREVO_API_KEY`/`EMAIL_FROM_ADDRESS`, `ABLY_API_KEY`, `VAPID_*` for the integrations. GitHub needs `PROD_DATABASE_URL`
-(direct), `RENDER_DEPLOY_HOOK_URL` and `BACKUP_PASSPHRASE`. See `backend/.env.example` and `frontend/.env.example`.
 "# CampusHubWeb" 
 
 tnbttechnologies@gmail.com

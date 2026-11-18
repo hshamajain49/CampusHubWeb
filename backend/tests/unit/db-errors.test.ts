@@ -20,6 +20,12 @@ describe('isConnectionError / mapPgError', () => {
     expect(mapPgError(wrapped)?.status).toBe(503);
   });
 
+  it('maps a RESTRICT violation the same on PostgreSQL 17 (23503) and 18 (23001)', () => {
+    const detail = 'Key (id)=(1) is referenced from table "bookings".';
+    expect(mapPgError({ code: '23503', detail })?.code).toBe('VENUE_HAS_BOOKINGS');
+    expect(mapPgError({ code: '23001', detail })?.code).toBe('VENUE_HAS_BOOKINGS');
+  });
+
   it('leaves other errors alone', () => {
     expect(isConnectionError(new Error('boom'))).toBe(false);
     expect(mapPgError(new Error('boom'))).toBeNull();

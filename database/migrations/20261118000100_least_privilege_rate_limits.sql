@@ -6,7 +6,7 @@
 --    One row per (client address, auth path); checked and counted in a single atomic upsert (lib/auth-rate-limit.ts).
 -- 2. campushub_app: the role the API connects as in production. Data access only: no DDL, no TRUNCATE, and no
 --    UPDATE/DELETE on the audit log. Created NOLOGIN here; the operator gives it a password once per Neon branch
---    (README "Database roles"). Migrations keep running as the owner from CI.
+--    (docs/DEPLOYMENT.md, "Database roles"). Migrations keep running as the owner from CI.
 -- 3. audit_logs is append-only for every role, the owner included. The one change allowed is the foreign key's
 --    own `on delete set null` (actor_id -> null when an account is deleted), and nothing else in the row may change.
 --    TRUNCATE stays possible for the owner (test resets, deliberate maintenance) but not for campushub_app.

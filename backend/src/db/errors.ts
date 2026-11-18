@@ -51,7 +51,9 @@ export function mapPgError(err: any): AppError | null {
       if (constraint === 'complaint_categories_name_lower_key') return appError('CATEGORY_NAME_TAKEN', undefined, { field: 'name' });
       if (constraint === 'service_departments_name_lower_key') return appError('DEPARTMENT_NAME_TAKEN', undefined, { field: 'name' });
       return null;
+    // 23503 foreign_key_violation; PostgreSQL 18 (Neon production) reports ON DELETE RESTRICT as 23001 restrict_violation.
     case '23503':
+    case '23001':
       if (err.table === 'bookings' || /bookings/.test(err.detail ?? '')) return appError('VENUE_HAS_BOOKINGS');
       return null;
     case '23514':

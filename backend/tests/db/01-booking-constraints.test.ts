@@ -286,6 +286,7 @@ describe('account deletion keeps other people’s records (docs/ACCOUNTS.md)', (
       expect((await c.query(`select count(*)::int n from booking_history where booking_id = $1 and event_type = 'cancelled' and actor_id is null`, [theirs])).rows[0].n).toBe(1);
       expect((await c.query(`select created_by from venue_blocks where reason = 'Painting'`)).rows[0]).toEqual({ created_by: null });
       // A member with bookings can't be removed by accident: the API deletes their bookings first.
-      expect(await attempt(c, 'delete from auth_users where id = $1', [ID.stu1])).toBe('23503');
+      // 23503 on PostgreSQL ≤ 17; PostgreSQL 18 (CI, Neon production) reports RESTRICT as 23001 restrict_violation.
+      expect(['23503', '23001']).toContain(await attempt(c, 'delete from auth_users where id = $1', [ID.stu1]));
     }));
 });
