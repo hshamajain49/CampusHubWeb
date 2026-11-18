@@ -228,3 +228,5 @@ Required production secrets: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_
 `BREVO_API_KEY`/`EMAIL_FROM_ADDRESS`, `ABLY_API_KEY`, `VAPID_*` for the integrations. GitHub needs `PROD_DATABASE_URL`
 (direct), `RENDER_DEPLOY_HOOK_URL` and `BACKUP_PASSPHRASE`. See `backend/.env.example` and `frontend/.env.example`.
 "# CampusHubWeb" 
+
+tnbttechnologies@gmail.com
