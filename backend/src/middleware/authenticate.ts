@@ -1,5 +1,6 @@
 // Session verification and the guard chain (§10.6, §16.10).
 import type { RequestHandler } from 'express';
+import { isSimulated } from '../lib/sentinel.js';
 import { fromNodeHeaders } from 'better-auth/node';
 import type { Role } from '@campushub/shared';
 import { auth } from '../lib/auth.js';
@@ -97,6 +98,8 @@ export interface Actor {
   fullName: string;
   ip: string | null;
   userAgent: string | null;
+  /** Test traffic (X-Sentinel-Simulated, honoured outside production only): its audit events are reported as simulated. */
+  simulated?: boolean;
 }
 
 export function actorOf(req: Parameters<RequestHandler>[0]): Actor {
@@ -106,5 +109,6 @@ export function actorOf(req: Parameters<RequestHandler>[0]): Actor {
     fullName: req.profile!.full_name,
     ip: req.ip ?? null,
     userAgent: req.get('user-agent')?.slice(0, 300) ?? null,
+    simulated: isSimulated(req),
   };
 }

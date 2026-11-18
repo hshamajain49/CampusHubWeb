@@ -531,15 +531,16 @@ function adminRouter() {
   return r;
 }
 
-interface Mount {
+export interface Mount {
   path: string;
   router: Router;
   /** null = public. Every other router must declare the roles it admits (default deny, §21.5). */
   roles: Role[] | null;
 }
 
-export function mountRoutes(app: Express) {
-  const mounts: Mount[] = [
+/** Every API router with the roles it admits. Also read by the authorization-matrix test. */
+export function routeTable(): Mount[] {
+  return [
     { path: '/api/v1', router: publicRouter(), roles: null },
     { path: '/api/v1/me', router: meRouter(), roles: ANY },
     { path: '/api/v1/notifications', router: notificationsRouter(), roles: ANY },
@@ -552,6 +553,10 @@ export function mountRoutes(app: Express) {
     { path: '/api/v1/staff', router: staffRouter(), roles: STAFF },
     { path: '/api/v1/admin', router: adminRouter(), roles: ADMINS },
   ];
+}
+
+export function mountRoutes(app: Express) {
+  const mounts = routeTable();
   // Startup self-check: only the explicitly public router may lack a role list.
   for (const m of mounts) {
     if (m.roles === null && m.path !== '/api/v1') throw new Error(`Router ${m.path} has no role guard`);

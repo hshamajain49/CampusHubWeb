@@ -11,7 +11,7 @@ import { logger } from '../../lib/logger.js';
  * Only field names and roles leave CampusHub, never names, emails or other values.
  */
 export function auditEvent(actor: Actor | null, entry: { action: string; entityType: string; entityId: string | null; summary: string; metadata?: Record<string, unknown> }): SecurityEvent {
-  const base = { sourceIp: cleanIp(actor?.ip), userRef: actor?.id ?? null, actorRole: actor?.role ?? null };
+  const base = { sourceIp: cleanIp(actor?.ip), userRef: actor?.id ?? null, actorRole: actor?.role ?? null, simulated: !!actor?.simulated };
   const after = (entry.metadata?.after ?? null) as Record<string, unknown> | null;
   const before = (entry.metadata?.before ?? null) as Record<string, unknown> | null;
   const changed = after ? Object.keys(after) : [];

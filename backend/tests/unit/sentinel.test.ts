@@ -102,6 +102,12 @@ describe('auditEvent', () => {
     expect(JSON.stringify(e)).not.toContain('New');
   });
 
+  it('marks the events of test traffic as simulated', () => {
+    const e = auditEvent({ ...actor, simulated: true }, { action: 'user.updated', entityType: 'user', entityId: 'u1', summary: 's', metadata: { before: { role: 'student' }, after: { role: 'faculty_staff' } } });
+    expect(e.simulated).toBe(true);
+    expect(auditEvent(actor, { action: 'venue.created', entityType: 'venue', entityId: 'v1', summary: 's' }).simulated).toBe(false);
+  });
+
   it('records everything else as admin.action', () => {
     const e = auditEvent(actor, { action: 'venue.deleted', entityType: 'venue', entityId: 'v1', summary: 'Deleted Hall' });
     expect(e).toMatchObject({ category: 'admin.action', severity: 'low', details: { action: 'venue.deleted' } });

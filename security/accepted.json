@@ -1,0 +1,71 @@
+{
+  "$comment": "Risks accepted on purpose. Every entry needs a reason; advisories also need a review date. The scripts report these as INFO instead of WARN/FAIL, and as WARN again once 'until' has passed.",
+  "advisories": [
+    {
+      "id": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "reason": "ReDoS with no fixed version yet. Reached only through lint and test tooling (eslint, vitest), never by the API or the built site.",
+      "until": "2027-02-01"
+    }
+  ],
+  "secrets": [
+    {
+      "file": "backend/.env.test",
+      "reason": "Local test-only values for the throwaway test database; used nowhere else."
+    },
+    {
+      "file": "backend/.env.example",
+      "reason": "Placeholders only."
+    },
+    {
+      "file": "frontend/.env.example",
+      "reason": "Placeholders only."
+    },
+    {
+      "file": "e2e/.env.example",
+      "reason": "Placeholders only."
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "reason": "CI uses generated values for its local test databases."
+    }
+  ],
+  "sast": [
+    {
+      "rule": "math-random",
+      "file": "backend/src/db/transaction.ts",
+      "reason": "Retry jitter, not a secret."
+    },
+    {
+      "rule": "math-random",
+      "file": "backend/src/lib/email/email-service.ts",
+      "reason": "File name for the local dev email outbox, not a secret."
+    }
+  ],
+  "sqlReviewed": [
+    {
+      "pattern": "^(limit|offset)$",
+      "reason": "Placeholders from Where.param() ($n), never values. Reviewed 2026-11-19."
+    },
+    {
+      "pattern": "^range$",
+      "reason": "tsrange(...) built only from Where.param() placeholders (venues.service). Reviewed 2026-11-19."
+    },
+    {
+      "pattern": "^(base|where)$",
+      "reason": "Fixed SQL plus the Where builder's clauses and placeholders. Reviewed 2026-11-19."
+    },
+    {
+      "pattern": "^c?w\\.sql\\(\\)$",
+      "reason": "Where builders (w, cw = new Where()): fixed clauses joined with 'and', values as $n. Reviewed 2026-11-19."
+    },
+    {
+      "pattern": "^[A-Z_]+\\[q\\.sort\\] \\?\\? [A-Z_]+\\['[a-zA-Z:]+'\\]$",
+      "reason": "Lookup in a fixed map of ORDER BY clauses; unknown keys fall back to the default. Reviewed 2026-11-19."
+    },
+    {
+      "pattern": "^[A-Z_]+(\\('\\$(\\d+|NOW)::\\w+'\\)|\\.replaceAll\\('\\$NOW', ('\\$\\d+'|nowP)\\))$",
+      "reason": "Constant SQL fragments with a fixed placeholder substituted. Reviewed 2026-11-19."
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+# Weekly security scan: dependency audit, secret scan (full history), CampusHub's own static checks, Semgrep's
+# OWASP / Node / TypeScript rule sets and, on manual runs with a target, the OWASP ZAP *baseline* (spider + passive
+# rules: it sends ordinary requests and never attacks; active scans belong on a staging copy, run by hand).
+#
+# This repository is public, so its Actions logs and artifacts are public too. The log shows counts only (--quiet)
+# and the full report goes to CampusHub Sentinel (private) when these repository secrets exist:
+#   SENTINEL_URL, SENTINEL_INGEST_KEY_ID, SENTINEL_INGEST_SECRET  (the same values as the API's).
+name: Security scan
+
+on:
+  schedule:
+    - cron: '30 3 * * 1' # Mondays 03:30 UTC
+  workflow_dispatch:
+    inputs:
+      zap_target:
+        description: 'Optional: URL for the passive ZAP baseline (e.g. the site). Leave empty to skip.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SENTINEL_URL: ${{ secrets.SENTINEL_URL }}
+      SENTINEL_INGEST_KEY_ID: ${{ secrets.SENTINEL_INGEST_KEY_ID }}
+      SENTINEL_INGEST_SECRET: ${{ secrets.SENTINEL_INGEST_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 } # the secret scan reads the whole history
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+      - run: npm ci --include=dev
+      - name: Build (the secret scan also checks the built site)
+        run: npm run build -w @campushub/shared && npm run build -w @campushub/frontend
+
+      - name: Semgrep
+        run: |
+          python3 -m pip install --quiet semgrep
+          semgrep scan --metrics=off --quiet --json -o semgrep.json \
+            --config p/owasp-top-ten --config p/javascript --config p/typescript --config p/nodejsscan \
+            backend/src frontend/src shared/src || true
+          test -s semgrep.json
+
+      - name: OWASP ZAP baseline (passive)
+        if: ${{ github.event.inputs.zap_target != '' && github.event.inputs.zap_target != null }}
+        env:
+          TARGET: ${{ github.event.inputs.zap_target }}
+        run: |
+          chmod a+w "$PWD"
+          docker run --rm -v "$PWD:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t "$TARGET" -J zap.json -I > /dev/null || true
+          test -s zap.json
+
+      - name: Report (counts here; details to Sentinel)
+        run: |
+          args="--env ci --quiet --static-only --semgrep semgrep.json"
+          [ -s zap.json ] && args="$args --zap zap.json"
+          [ -n "$SENTINEL_INGEST_SECRET" ] && args="$args --upload"
+          npm run security:audit -- $args

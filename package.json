@@ -32,7 +32,14 @@
     "db:local:stop": "node scripts/local-db.mjs stop",
     "neon:env": "node scripts/neon-env.mjs",
     "create-super-admin:prod": "node scripts/create-super-admin-prod.mjs",
-    "reset-mfa:prod": "node scripts/create-super-admin-prod.mjs --reset-mfa"
+    "reset-mfa:prod": "node scripts/create-super-admin-prod.mjs --reset-mfa",
+    "security:dependencies": "node security/scripts/dependencies.mjs",
+    "security:secrets": "node security/scripts/secrets.mjs --history",
+    "security:sast": "node security/scripts/sast.mjs",
+    "security:headers": "node security/scripts/headers.mjs",
+    "security:probe": "node security/scripts/probe.mjs",
+    "security:scan": "node security/scripts/audit.mjs --static-only",
+    "security:audit": "node security/scripts/audit.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

@@ -157,6 +157,12 @@ the secret never reaches the browser). When it is on:
   schedule. CampusHub's own protections never depend on Sentinel.
 - **Test traffic:** the header `X-Sentinel-Simulated: 1` marks events as simulated. It is ignored in production.
 
+## Security checks
+
+`npm run security:scan` runs the dependency audit, the secret scan (including git history) and the static checks.
+`npm run security:audit` adds a passive header check (safe against production), an active probe (local or staging
+only) and an upload to Sentinel. See [security/README.md](security/README.md). Reports stay out of this repository.
+
 ## Project layout
 
 ```

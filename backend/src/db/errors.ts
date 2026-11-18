@@ -4,7 +4,20 @@ import { logger } from '../lib/logger.js';
 
 const CONNECTION_CODES = new Set(['57P01', '53300', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND']);
 
+/**
+ * A lost database connection, however deeply it is wrapped: Better Auth wraps pool errors in its own APIError
+ * (cause), and pg-pool reports a refused connection as an AggregateError (errors[]).
+ */
+export function isConnectionError(err: any, depth = 0): boolean {
+  if (!err || depth > 4) return false;
+  const code = typeof err.code === 'string' ? err.code : undefined;
+  if (code && (code.startsWith('08') || CONNECTION_CODES.has(code))) return true;
+  if (isConnectionError(err.cause, depth + 1)) return true;
+  return Array.isArray(err.errors) && err.errors.some((e: unknown) => isConnectionError(e, depth + 1));
+}
+
 export function mapPgError(err: any): AppError | null {
+  if (isConnectionError(err)) return appError('SERVICE_UNAVAILABLE');
   const code: string | undefined = err?.code;
   if (!code || typeof code !== 'string') return null;
   const constraint: string | undefined = err.constraint;
