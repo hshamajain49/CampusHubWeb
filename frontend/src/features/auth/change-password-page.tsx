@@ -1,13 +1,14 @@
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { KeyRound, LogOut } from 'lucide-react';
-import { passwordSchema } from '@campushub/shared';
+import { passwordSchema, SUPER_ADMIN_MIN_PASSWORD_LENGTH } from '@campushub/shared';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useDocumentTitle } from '@/hooks/misc';
-import { roleHome, useAuth } from '@/providers/auth-provider';
+import { safeRedirect } from '@/lib/navigation';
+import { canAccess, nextStep, roleHome, useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/controls';
 import { Field } from '@/components/common/form-field';
@@ -31,10 +32,18 @@ export async function submitPasswordChange(v: ChangePasswordValues, setError: (f
   }
 }
 
+/** The hint under "New password": Super Admins need a longer one (the API enforces it). */
+export function passwordHint(role: string | undefined): string {
+  return role === 'super_admin'
+    ? `At least ${SUPER_ADMIN_MIN_PASSWORD_LENGTH} characters, with a letter and a number.`
+    : 'At least 8 characters, with a letter and a number.';
+}
+
 export function ChangePasswordPage() {
   useDocumentTitle('Choose a new password');
-  const { refreshProfile, signOut } = useAuth();
+  const { profile, refreshProfile, signOut } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const form = useForm<ChangePasswordValues>({ resolver: zodResolver(changePasswordForm), mode: 'onTouched', defaultValues: { currentPassword: '', newPassword: '', confirm: '' } });
   const { errors, isSubmitting } = form.formState;
 
@@ -43,7 +52,13 @@ export function ChangePasswordPage() {
     if (!ok) return;
     const me = await refreshProfile();
     toast.success('Password updated.');
-    navigate(me ? roleHome(me.role) : '/', { replace: true });
+    if (!me) return navigate('/', { replace: true });
+    // A new Super Admin goes on to set up two-step verification, keeping any deep link for afterwards.
+    const target = safeRedirect(params.get('redirectTo'));
+    const keep = target && canAccess(me.role, target) ? target : null;
+    const step = nextStep(me);
+    if (step) return navigate(keep ? `${step}?redirectTo=${encodeURIComponent(keep)}` : step, { replace: true });
+    navigate(keep ?? roleHome(me.role), { replace: true });
   });
 
   return (
@@ -57,7 +72,7 @@ export function ChangePasswordPage() {
         <Field label="Current (temporary) password" error={errors.currentPassword?.message}>
           {(p) => <PasswordInput {...p} autoComplete="current-password" {...form.register('currentPassword')} />}
         </Field>
-        <Field label="New password" error={errors.newPassword?.message} hint="At least 8 characters, with a letter and a number.">
+        <Field label="New password" error={errors.newPassword?.message} hint={passwordHint(profile?.role)}>
           {(p) => <PasswordInput {...p} autoComplete="new-password" {...form.register('newPassword')} />}
         </Field>
         <Field label="Confirm new password" error={errors.confirm?.message}>

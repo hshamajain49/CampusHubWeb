@@ -1,7 +1,7 @@
 // Super Admin provisioning, §14.9 Method A. Out-of-band only — never reachable over HTTP.
 //   npm run create-super-admin -w @campushub/backend -- --email admin@college.edu --name "Venue Administrator" [--password-stdin]
 import { randomInt } from 'node:crypto';
-import { domainAllowed, emailSchema, fullNameSchema, passwordSchema } from '@campushub/shared';
+import { domainAllowed, emailSchema, fullNameSchema, passwordSchema, SUPER_ADMIN_MIN_PASSWORD_LENGTH } from '@campushub/shared';
 import { pool } from '../db/pool.js';
 import { withTransaction } from '../db/transaction.js';
 import { createCredentialUser, hashPassword } from '../lib/auth-accounts.js';
@@ -58,8 +58,13 @@ async function main() {
   }
 
   const password = process.argv.includes('--password-stdin') ? await readStdin() : generatePassword();
-  if (!passwordSchema.safeParse(password).success) {
-    console.error('The password must be 8–72 characters and include a letter and a number.');
+  const check = passwordSchema.safeParse(password);
+  if (!check.success || password.length < SUPER_ADMIN_MIN_PASSWORD_LENGTH) {
+    console.error(
+      check.success
+        ? `Super Admin passwords must be at least ${SUPER_ADMIN_MIN_PASSWORD_LENGTH} characters.`
+        : (check.error.issues[0]?.message ?? 'The password must be 8–72 characters and include a letter and a number.'),
+    );
     process.exit(1);
   }
   const hash = await hashPassword(password);

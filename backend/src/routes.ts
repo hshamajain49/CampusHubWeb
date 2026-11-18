@@ -8,6 +8,8 @@ import {
   complaintReassignBody,
   deleteAccountBody,
   dismissReassignmentBody,
+  mfaCodeBody,
+  mfaSetupBody,
   mySuggestionsQuery,
   suggestionCreateBody,
   suggestionIdParam,
@@ -71,7 +73,7 @@ import {
   type Role,
 } from '@campushub/shared';
 import { z } from 'zod';
-import { actorOf, authenticate, guard, loadProfile, requireActive } from './middleware/authenticate.js';
+import { actorOf, authenticate, guard, loadProfile, requireActive, requireMfa, requireRole } from './middleware/authenticate.js';
 import { validate } from './middleware/validate.js';
 import { limits } from './middleware/rate-limiters.js';
 import { uploadImage } from './middleware/upload-image.js';
@@ -82,6 +84,7 @@ import { pool } from './db/pool.js';
 import { loadCampus } from './domain/settings.js';
 import { createTokenRequest, realtimeEnabled } from './lib/realtime.js';
 import * as me from './modules/me/me.service.js';
+import * as mfa from './modules/mfa/mfa.service.js';
 import * as settings from './modules/settings/settings.service.js';
 import * as venues from './modules/venues/venues.service.js';
 import * as bookings from './modules/bookings/bookings.service.js';
@@ -148,17 +151,37 @@ function publicRouter() {
 function meRouter() {
   const r = Router();
   r.use(authenticate, loadProfile, requireActive);
-  r.get('/', (req, res) => void res.json({ data: me.toMe(req.profile!) }));
-  r.patch('/', validate({ body: updateMeBody }), async (req, res) => {
-    res.json({ data: await me.updateMe(req.profile!, req.valid.body) });
+  const mfaStatusOf = (req: Req) => mfa.mfaStatus(req.profile!.id, req.profile!.role, req.auth!.sessionId);
+  // GET /me answers before the second step too: the SPA reads mfa.{required,enrolled,verified} from it.
+  r.get('/', async (req, res) => void res.json({ data: me.toMe(req.profile!, await mfaStatusOf(req)) }));
+  r.patch('/', requireMfa(), validate({ body: updateMeBody }), async (req, res) => {
+    res.json({ data: await me.updateMe(req.profile!, req.valid.body, await mfaStatusOf(req)) });
   });
-  r.post('/change-password', limits.changePassword, validate({ body: changePasswordBody }), async (req, res) => {
-    await me.changePassword(req.profile!.id, req.auth!.sessionId, req.valid.body);
+  // A temporary password is replaced before two-step verification is set up, so this is open to unenrolled admins.
+  r.post('/change-password', limits.changePassword, requireMfa({ allowUnenrolled: true }), validate({ body: changePasswordBody }), async (req, res) => {
+    await me.changePassword(req.profile!.id, req.profile!.role, req.auth!.sessionId, req.valid.body);
     res.status(204).end();
   });
   // Permanent account deletion (password + typed DELETE); the last Super Admin is refused (docs/ACCOUNTS.md).
-  r.delete('/', limits.changePassword, validate({ body: deleteAccountBody }), async (req, res) => {
+  r.delete('/', limits.changePassword, requireMfa(), validate({ body: deleteAccountBody }), async (req, res) => {
     res.json({ data: await deleteOwnAccount(req.profile!, req.valid.body) });
+  });
+
+  // Two-step verification (security/AUDIT.md F-02): Super Admins only. These are the steps an unverified session
+  // may take, so they sit outside requireMfa.
+  const mfaRoute = [requireRole('super_admin'), limits.mfa] as const;
+  const withEmail = (req: Req) => ({ ...actorOf(req), email: req.profile!.email });
+  r.post('/mfa/setup', ...mfaRoute, validate({ body: mfaSetupBody }), async (req, res) => {
+    res.json({ data: await mfa.setupMfa(withEmail(req), req.valid.body.password) });
+  });
+  r.post('/mfa/enable', ...mfaRoute, validate({ body: mfaCodeBody }), async (req, res) => {
+    res.json({ data: await mfa.enableMfa(actorOf(req), req.auth!.sessionId, req.valid.body.code) });
+  });
+  r.post('/mfa/verify', ...mfaRoute, validate({ body: mfaCodeBody }), async (req, res) => {
+    res.json({ data: await mfa.verifyMfa(actorOf(req), req.auth!.sessionId, req.valid.body.code) });
+  });
+  r.post('/mfa/recovery-codes', ...mfaRoute, requireMfa(), validate({ body: mfaCodeBody }), async (req, res) => {
+    res.json({ data: await mfa.regenerateRecoveryCodes(actorOf(req), req.valid.body.code) });
   });
   const fresh = guard({ roles: MEMBERS }).slice(3);
   r.get('/dashboard', ...fresh, async (req, res) => {

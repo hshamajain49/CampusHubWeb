@@ -46,6 +46,32 @@ export interface Me {
   lastSignInAt: string | null;
   /** USN / faculty ID from the member's latest booking, to prefill the booking form. */
   lastIdNumber: string | null;
+  /** Two-step verification (TOTP). Required for Super Admins in production. */
+  mfa: MfaStatus;
+}
+
+export interface MfaStatus {
+  /** This account must pass a second step before using the API. */
+  required: boolean;
+  /** An authenticator app is set up. */
+  enrolled: boolean;
+  /** This session has passed the second step (always true when not required). */
+  verified: boolean;
+  /** Unused recovery codes (null when not enrolled). */
+  recoveryCodesLeft: number | null;
+}
+
+/** POST /me/mfa/setup: the new secret, shown once while enrolling. */
+export interface MfaSetup {
+  /** Base32 secret for manual entry. */
+  secret: string;
+  otpauthUrl: string;
+  /** QR code of otpauthUrl as an SVG document. */
+  qrSvg: string;
+}
+
+export interface MfaRecoveryCodes {
+  recoveryCodes: string[];
 }
 
 export interface BookingRules {

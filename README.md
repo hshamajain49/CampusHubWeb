@@ -40,15 +40,18 @@ applies the migrations to both, seeds demo data the first time, and starts every
 | API | http://localhost:4000 (`/health`, `/api/v1/*`, `/api/auth/*`) |
 | Dev-only stress harness | http://localhost:5173/dev/break-ui?data=worst (sign in as admin first) |
 
-Demo accounts (seeded):
+Demo accounts (seeded; local passwords are set in `backend/src/scripts/seed-dev.ts`):
 
-| Role | Email | Password |
-|---|---|---|
-| Super Admin | `admin@demo.edu` | `Admin12345` (sign in at `/admin/login`) |
-| Student | `student@demo.edu` | `Student12345` |
-| Faculty/Staff | `faculty@demo.edu` | `Faculty12345` |
-| Department Staff (Electrical) | `staff.electrical@demo.edu` | `Staff12345` |
-| Department Staff (Plumbing) | `staff.plumbing@demo.edu` | `Staff12345` |
+| Role | Email |
+|---|---|
+| Super Admin | `admin@demo.edu` (sign in at `/admin/login`) |
+| Student | `student@demo.edu` |
+| Faculty/Staff | `faculty@demo.edu` |
+| Department Staff (Electrical) | `staff.electrical@demo.edu` |
+| Department Staff (Plumbing) | `staff.plumbing@demo.edu` |
+
+> **Never point a public deployment at a seeded database.** The demo passwords are in this public repository, so a
+> deployed API on seeded data gives anyone a Super Admin sign-in. The deployed API must use the `production` branch.
 
 Locally, email goes to `backend/.tmp/outbox/*.html` (`EMAIL_TRANSPORT=file`). Realtime and push stay off until you add
 Ably/VAPID keys; the app polls instead.
@@ -122,6 +125,38 @@ Implemented from `COMPLAINT_REGISTRATION_SPEC.md` v1.1; stack adaptations and de
 - **With venue booking**: complaints can name a venue; admin venue pages show an Issues tab; an admin can block a
   venue for maintenance straight from a complaint about it.
 
+## Visitor analytics (optional)
+
+`frontend/src/lib/analytics.ts` reports page views to CampusHub Sentinel, the developers' monitoring site (a
+separate application). It is **off unless both of these are set**: `VITE_SENTINEL_URL` and `VITE_SENTINEL_SITE_KEY`.
+The site key is public and comes from Sentinel's `app:register`. When it is on:
+
+- **What's sent:** one page view per page change, plus a heartbeat every 30 s while the tab is visible and in use.
+- **Paths:** no query strings, and record IDs are replaced by `:id`.
+- **Visitors:** a random visitor ID kept in the browser; no account link unless `VITE_SENTINEL_LINK_USERS=true`.
+- **Nothing is sent** when the browser sends Do-Not-Track or Global Privacy Control.
+- **No banner:** the footer links to `/privacy`, which explains what is measured and has a per-device off switch.
+- **CSP:** `npm run build` adds the Sentinel origin to the CSP's `connect-src` (`frontend/scripts/write-headers.mjs`).
+- **Failures are silent:** analytics can't break or slow down CampusHub.
+
+## Security monitoring (optional)
+
+`backend/src/lib/sentinel.ts` reports security events to CampusHub Sentinel, the developers' monitoring service. It is
+**off unless all three are set**: `SENTINEL_URL`, `SENTINEL_INGEST_KEY_ID` and `SENTINEL_INGEST_SECRET` (API only;
+the secret never reaches the browser). When it is on:
+
+- **What's reported:** sign-in outcomes, refused requests (403, and 401 on the admin API), lookups of records that
+  don't exist, rejected uploads, rate-limit refusals, injection-like input (observed only), server errors, and admin
+  changes from the audit log (role and settings changes in their own categories). Also per-minute request counts.
+- **What isn't:** no email addresses, names, passwords, request bodies or record IDs. Accounts appear as a keyed hash
+  or as the user's UUID, and paths have IDs replaced by `:id`.
+- **Blocklist:** every minute the API fetches the addresses Sentinel has blocked and answers them with
+  `403 ACCESS_BLOCKED` (never on `/health`). Each block ends at its own expiry.
+- **Never in the way:** events are queued in memory and sent in the background (signed with HMAC-SHA256). If
+  Sentinel is down, CampusHub works exactly as before: events wait (up to 1,000) and the last blocklist expires on
+  schedule. CampusHub's own protections never depend on Sentinel.
+- **Test traffic:** the header `X-Sentinel-Simulated: 1` marks events as simulated. It is ignored in production.
+
 ## Project layout
 
 ```
@@ -155,7 +190,8 @@ action bars respect safe areas, and inputs are 16 px so iOS doesn't zoom.
 - **SPA on Cloudflare Pages**: build `npm run build -w @campushub/shared && npm run build -w @campushub/frontend`,
   output `frontend/dist`, env `VITE_API_ORIGIN=<API URL>`. The build writes `dist/_headers` (CSP, HSTS, caching).
 - **Database and photos on Neon**, `production` branch (PostgreSQL 18, Singapore, same region as Render). Use the
-  **direct** connection string everywhere (API, migrations, backups): `neon connection-string production`. The object
+  **direct** connection string everywhere (API, migrations, backups): `neon connection-string production`. The API
+  connects as the least-privilege role `campushub_app` (see "Database roles" below). The object
   storage values (`AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) come from
   `neon env pull --branch production`. Migrate with
   `DATABASE_URL=<direct url> npx dbmate --migrations-dir database/migrations --no-dump-schema up`.
@@ -171,6 +207,21 @@ action bars respect safe areas, and inputs are 16 px so iOS doesn't zoom.
 - **CI** (`.github/workflows/ci.yml`): lint/typecheck → unit → db → integration → e2e, a secrets scan of the built
   bundle plus gitleaks, then a gated deploy (migrate, then the Render deploy hook). `backup.yml` stores a weekly
   GPG-encrypted `pg_dump`; `jobs-backup.yml` is an optional second scheduler.
+
+### Database roles
+
+The API runs as `campushub_app`, which can read and write application data but can't change the schema, truncate
+tables, or edit or delete the audit log (`audit_logs` is append-only for every role). Migrations and backups keep
+using the owner role. The migration `20261118000100_least_privilege_rate_limits.sql` creates the role without a
+login; once per Neon branch:
+
+1. Generate a password: `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`.
+2. In the Neon SQL editor for that branch (or `psql` with the owner's direct URL), run
+   `alter role campushub_app with login password '<password>';`. Create it with SQL, not in the Neon console: roles
+   made in the console are added to `neon_superuser`.
+3. Set Render's `DATABASE_URL` to the owner's direct URL with the user and password replaced:
+   `postgresql://campushub_app:<password>@<direct host>/neondb?sslmode=require&channel_binding=require`.
+4. Leave GitHub's `PROD_DATABASE_URL` (migrations, backups) on the owner role.
 
 Required production secrets: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `FRONTEND_URL`, `CORS_ORIGINS`,
 `CRON_SECRET`, `AWS_ENDPOINT_URL_S3`/`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (Neon storage), plus

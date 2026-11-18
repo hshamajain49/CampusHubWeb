@@ -25,6 +25,8 @@ export const authPages = {
   register: () => import('@/features/auth/register-page'),
   passwords: () => import('@/features/auth/password-pages'),
   changePassword: () => import('@/features/auth/change-password-page'),
+  twoFactor: () => import('@/features/auth/two-factor-page'),
+  privacy: () => import('@/features/misc/privacy-page'),
 };
 
 export const adminPages = {

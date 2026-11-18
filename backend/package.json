@@ -11,6 +11,7 @@
     "test:db": "node ../scripts/with-node-env.mjs test vitest run tests/db",
     "test:integration": "node ../scripts/with-node-env.mjs test vitest run tests/integration tests/concurrency",
     "create-super-admin": "tsx src/scripts/create-super-admin.ts",
+    "reset-mfa": "tsx src/scripts/reset-mfa.ts",
     "seed:dev": "node ../scripts/with-node-env.mjs development tsx src/scripts/seed-dev.ts",
     "seed:if-empty": "node ../scripts/with-node-env.mjs development tsx src/scripts/seed-dev.ts --if-empty",
     "auth:check": "npx @better-auth/cli generate --config src/lib/auth.ts",
@@ -32,6 +33,7 @@
     "pg": "^8.16.3",
     "pino": "^10.1.0",
     "pino-http": "^11.0.0",
+    "qrcode": "^1.5.4",
     "sharp": "^0.35.5",
     "web-push": "^3.6.7",
     "zod": "^4.1.12"
@@ -43,6 +45,7 @@
     "@types/node": "^22.19.0",
     "@types/pdfkit": "^0.17.3",
     "@types/pg": "^8.15.6",
+    "@types/qrcode": "^1.5.6",
     "@types/supertest": "^6.0.3",
     "@types/web-push": "^3.6.4",
     "supertest": "^7.1.4",

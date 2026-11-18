@@ -4,8 +4,10 @@ import { fromNodeHeaders } from 'better-auth/node';
 import type { Role } from '@campushub/shared';
 import { auth } from '../lib/auth.js';
 import { pool } from '../db/pool.js';
+import { config } from '../config/env.js';
 import { appError } from '../errors/app-error.js';
 import { logger } from '../lib/logger.js';
+import { mfaRequiredFor, mfaStatus } from '../modules/mfa/mfa.service.js';
 import type { ProfileRow } from '../types/express.js';
 
 export const authenticate: RequestHandler = async (req, _res, next) => {
@@ -16,7 +18,7 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
     logger.debug({ reqId: req.id }, 'session not found or expired');
     return next(appError('UNAUTHENTICATED', 'Your session has expired. Please sign in again.'));
   }
-  req.auth = { userId: result.user.id, sessionId: result.session.id };
+  req.auth = { userId: result.user.id, sessionId: result.session.id, sessionCreatedAt: new Date(result.session.createdAt) };
   next();
 };
 
@@ -37,6 +39,12 @@ export async function loadProfileRow(id: string): Promise<ProfileRow | null> {
 export const loadProfile: RequestHandler = async (req, _res, next) => {
   const profile = await loadProfileRow(req.auth!.userId);
   if (!profile) return next(appError('UNAUTHENTICATED', 'Your account is not set up. Contact the administrator.'));
+  // Super Admin sessions end after SUPER_ADMIN_SESSION_HOURS whatever their activity (security/AUDIT.md F-10).
+  const age = Date.now() - req.auth!.sessionCreatedAt.getTime();
+  if (profile.role === 'super_admin' && age > config.SUPER_ADMIN_SESSION_HOURS * 3_600_000) {
+    await pool.query('delete from public.auth_sessions where id = $1', [req.auth!.sessionId]);
+    return next(appError('UNAUTHENTICATED', 'Your admin session has ended. Please sign in again.'));
+  }
   req.profile = profile;
   next();
 };
@@ -51,6 +59,21 @@ export const requirePasswordFresh: RequestHandler = (req, _res, next) => {
   next();
 };
 
+/**
+ * Two-step verification (Super Admins in production): the session must have passed it. allowUnenrolled lets an
+ * account that hasn't set it up yet through (changing a temporary password comes before enrolment).
+ */
+export function requireMfa(opts: { allowUnenrolled?: boolean } = {}): RequestHandler {
+  return async (req, _res, next) => {
+    const p = req.profile!;
+    if (!mfaRequiredFor(p.role)) return next();
+    req.mfa ??= await mfaStatus(p.id, p.role, req.auth!.sessionId);
+    if (req.mfa.verified) return next();
+    if (!req.mfa.enrolled) return next(opts.allowUnenrolled ? undefined : appError('MFA_ENROLLMENT_REQUIRED'));
+    next(appError('MFA_REQUIRED'));
+  };
+}
+
 export function requireRole(...roles: Role[]): RequestHandler {
   const handler: RequestHandler = (req, _res, next) => {
     if (!roles.includes(req.profile!.role)) return next(appError('FORBIDDEN'));
@@ -60,10 +83,10 @@ export function requireRole(...roles: Role[]): RequestHandler {
   return handler;
 }
 
-/** authenticate → loadProfile → requireActive (→ requirePasswordFresh → requireRole). */
+/** authenticate → loadProfile → requireActive (→ requirePasswordFresh → requireMfa → requireRole). */
 export function guard(opts: { roles?: Role[]; passwordFresh?: boolean } = {}): RequestHandler[] {
   const chain: RequestHandler[] = [authenticate, loadProfile, requireActive];
-  if (opts.passwordFresh !== false) chain.push(requirePasswordFresh);
+  if (opts.passwordFresh !== false) chain.push(requirePasswordFresh, requireMfa());
   if (opts.roles) chain.push(requireRole(...opts.roles));
   return chain;
 }

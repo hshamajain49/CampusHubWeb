@@ -40,7 +40,9 @@ services:
         sync: false
       - key: BETTER_AUTH_SECRET
         sync: false
-      - key: DATABASE_URL # Neon production branch, DIRECT endpoint (no -pooler): neon connection-string production
+      # Neon production branch, DIRECT endpoint (no -pooler), as the least-privilege role campushub_app (README
+      # "Database roles"). Migrations run as the owner from CI (PROD_DATABASE_URL), never from this service.
+      - key: DATABASE_URL
         sync: false
       - key: BREVO_API_KEY
         sync: false
@@ -63,4 +65,16 @@ services:
       - key: AWS_SECRET_ACCESS_KEY
         sync: false
       - key: CRON_SECRET
+        sync: false
+      # Security hardening (security fixes F-02, F-05, F-10). SUPER_ADMIN_MFA defaults to "required" in production and
+      # "off" is refused. Leave ALLOW_DEMO_DATA unset: the API then refuses to start on a seeded demo database.
+      - key: SUPER_ADMIN_SESSION_HOURS
+        value: '12'
+      # CampusHub Sentinel (the developers' monitoring service). All three or none; unset = reporting off.
+      # SENTINEL_URL is Sentinel's https origin; the key id and secret come from `npm run app:rotate-secret` there.
+      - key: SENTINEL_URL
+        sync: false
+      - key: SENTINEL_INGEST_KEY_ID
+        sync: false
+      - key: SENTINEL_INGEST_SECRET
         sync: false

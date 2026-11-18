@@ -1,5 +1,5 @@
 // /me (E03–E05), registration (E02), push subscriptions (E52/E53).
-import { domainAllowed, domainRestrictionMessage, type Me, type RegisterBody } from '@campushub/shared';
+import { domainAllowed, domainRestrictionMessage, SUPER_ADMIN_MIN_PASSWORD_LENGTH, type Me, type MfaStatus, type RegisterBody, type Role } from '@campushub/shared';
 import { pool } from '../../db/pool.js';
 import { withTransaction } from '../../db/transaction.js';
 import { appError } from '../../errors/app-error.js';
@@ -9,7 +9,9 @@ import { pushEnabled } from '../../lib/push.js';
 import type { ProfileRow } from '../../types/express.js';
 import { loadProfileRow } from '../../middleware/authenticate.js';
 
-export function toMe(p: ProfileRow): Me {
+const NO_MFA: MfaStatus = { required: false, enrolled: false, verified: true, recoveryCodesLeft: null };
+
+export function toMe(p: ProfileRow, mfa: MfaStatus = NO_MFA): Me {
   return {
     id: p.id,
     email: p.email,
@@ -25,6 +27,7 @@ export function toMe(p: ProfileRow): Me {
     createdAt: new Date(p.created_at).toISOString(),
     lastSignInAt: p.last_sign_in_at ? new Date(p.last_sign_in_at).toISOString() : null,
     lastIdNumber: p.last_id_number ?? null,
+    mfa,
   };
 }
 
@@ -43,7 +46,11 @@ export async function register(body: RegisterBody) {
   return { userId, email: body.email };
 }
 
-export async function updateMe(p: ProfileRow, body: { fullName?: string; department?: string | null; emailNotifications?: boolean }): Promise<Me> {
+export async function updateMe(
+  p: ProfileRow,
+  body: { fullName?: string; department?: string | null; emailNotifications?: boolean },
+  mfa?: MfaStatus,
+): Promise<Me> {
   const department = p.role === 'super_admin' ? p.department : body.department !== undefined ? body.department : p.department;
   await pool.query(`update public.profiles set full_name = $2, department = $3, email_notifications = $4 where id = $1`, [
     p.id,
@@ -51,12 +58,21 @@ export async function updateMe(p: ProfileRow, body: { fullName?: string; departm
     department,
     body.emailNotifications ?? p.email_notifications,
   ]);
-  return toMe((await loadProfileRow(p.id))!);
+  return toMe((await loadProfileRow(p.id))!, mfa);
 }
 
-export async function changePassword(userId: string, sessionId: string, body: { currentPassword: string; newPassword: string }) {
+export async function changePassword(
+  userId: string,
+  role: Role,
+  sessionId: string,
+  body: { currentPassword: string; newPassword: string },
+) {
   if (!(await verifyPassword(userId, body.currentPassword))) {
     throw appError('INVALID_CURRENT_PASSWORD', 'Current password is incorrect.', { field: 'currentPassword' });
+  }
+  if (role === 'super_admin' && body.newPassword.length < SUPER_ADMIN_MIN_PASSWORD_LENGTH) {
+    const msg = `Super Admin passwords must be at least ${SUPER_ADMIN_MIN_PASSWORD_LENGTH} characters.`;
+    throw appError('VALIDATION_ERROR', msg, { fieldErrors: { newPassword: [msg] }, formErrors: [] });
   }
   const hash = await hashPassword(body.newPassword);
   await withTransaction({ actorId: userId }, async (tx) => {

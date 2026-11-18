@@ -20,8 +20,9 @@ import { PageHeader, SectionCard } from '@/components/common/layout-bits';
 import { RoleBadge } from '@/components/common/badges';
 import { UserAvatar } from '@/components/common/small';
 import { PasswordInput } from '@/features/auth/password-input';
-import { changePasswordForm, submitPasswordChange, type ChangePasswordValues } from '@/features/auth/change-password-page';
+import { changePasswordForm, passwordHint, submitPasswordChange, type ChangePasswordValues } from '@/features/auth/change-password-page';
 import { DeleteAccountCard } from './delete-account';
+import { TwoStepCard } from './two-step-card';
 
 function useUpdateMe() {
   const qc = useQueryClient();
@@ -67,7 +68,7 @@ function EditProfile({ me }: { me: Me }) {
   );
 }
 
-function ChangePassword() {
+function ChangePassword({ role }: { role: Me['role'] }) {
   const form = useForm<ChangePasswordValues>({ resolver: zodResolver(changePasswordForm), mode: 'onTouched', defaultValues: { currentPassword: '', newPassword: '', confirm: '' } });
   const { errors, isSubmitting } = form.formState;
   const onSubmit = form.handleSubmit(async (v) => {
@@ -84,7 +85,7 @@ function ChangePassword() {
           {(p) => <PasswordInput {...p} autoComplete="current-password" {...form.register('currentPassword')} />}
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="New password" error={errors.newPassword?.message} hint="At least 8 characters, with a letter and a number.">
+          <Field label="New password" error={errors.newPassword?.message} hint={passwordHint(role)}>
             {(p) => <PasswordInput {...p} autoComplete="new-password" {...form.register('newPassword')} />}
           </Field>
           <Field label="Confirm new password" error={errors.confirm?.message}>
@@ -231,7 +232,8 @@ export function ProfilePage() {
           </div>
         </section>
         <EditProfile me={me} />
-        <ChangePassword />
+        <ChangePassword role={me.role} />
+        {me.mfa.enrolled && <TwoStepCard me={me} />}
         <Notifications me={me} />
         <SectionCard title="Session">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

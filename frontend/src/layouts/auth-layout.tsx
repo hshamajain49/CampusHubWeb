@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router';
+import { Link, Outlet } from 'react-router';
 import { CalendarCheck2, Megaphone, Search } from 'lucide-react';
 import { Logo, Wordmark } from '@/components/common/brand';
 import { usePublicSettings } from '@/hooks/use-public-settings';
@@ -103,7 +103,10 @@ export function AuthLayout() {
           </div>
         </div>
         <p className="relative text-[12px] text-white/50">
-          © {new Date().getFullYear()} {institution}
+          © {new Date().getFullYear()} {institution} ·{' '}
+          <Link to="/privacy" className="text-white/70 hover:text-white hover:underline">
+            Privacy
+          </Link>
         </p>
       </aside>
 
@@ -120,7 +123,10 @@ export function AuthLayout() {
           </div>
         </div>
         <p className="pb-6 text-center text-[12px] text-subtle lg:hidden">
-          © {new Date().getFullYear()} {institution}
+          © {new Date().getFullYear()} {institution} ·{' '}
+          <Link to="/privacy" className="font-medium text-primary hover:underline">
+            Privacy
+          </Link>
         </p>
       </main>
     </div>

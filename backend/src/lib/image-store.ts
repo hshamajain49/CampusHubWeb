@@ -13,6 +13,7 @@ import sharp from 'sharp';
 import { config } from '../config/env.js';
 import { appError } from '../errors/app-error.js';
 import { neonS3 } from './s3.js';
+import { MAX_INPUT_PIXELS, sniffImageType } from './images.js';
 
 export interface StoredImage {
   secureUrl: string;
@@ -53,12 +54,14 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
 const neonObjectUrl = (key: string) => `${config.AWS_ENDPOINT_URL_S3!.replace(/\/+$/, '')}/${config.NEON_STORAGE_BUCKET}/${key}`;
 
 async function render(buffer: Buffer) {
+  // The bytes decide the type, never the client's Content-Type; the pixel cap stops decompression bombs (F-08).
+  if (!sniffImageType(buffer)) throw appError('IMAGE_INVALID');
   try {
     // rotate() applies EXIF orientation; metadata (GPS etc.) is stripped by default.
     return await Promise.all(
       RENDITIONS.map(async (r) => ({
         suffix: r.suffix,
-        body: await sharp(buffer, { failOn: 'error' })
+        body: await sharp(buffer, { failOn: 'error', limitInputPixels: MAX_INPUT_PIXELS })
           .rotate()
           .resize(r.width, r.height, { fit: 'cover', position: sharp.strategy.attention })
           .webp({ quality: r.quality })

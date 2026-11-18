@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import { setNavigate } from '@/lib/navigation';
+import { startAnalytics, trackPageview } from '@/lib/analytics';
 import { RedirectIfAuthenticated, RequireAuth, RequireRole, RootRedirect } from '@/routes/guards';
 import { adminPages as A, authPages, memberPages as M, staffPages as S } from '@/routes/pages';
 import { RouteErrorBoundary } from '@/components/common/route-error-boundary';
@@ -44,11 +45,18 @@ const routes: RouteObject[] = [
         children: [
           { path: '/forgot-password', ...page(authPages.passwords, 'ForgotPasswordPage') },
           { path: '/reset-password', ...page(authPages.passwords, 'ResetPasswordPage') },
+          // Open to everyone, signed in or not: what visitor analytics records, and the switch to turn it off.
+          { path: '/privacy', ...page(authPages.privacy, 'PrivacyPage') },
         ],
       },
       {
-        element: <RequireAuth allowPasswordChange />,
+        element: <RequireAuth step="/change-password" />,
         children: [{ element: <AuthLayout />, children: [{ path: '/change-password', ...page(authPages.changePassword, 'ChangePasswordPage') }] }],
+      },
+      {
+        // Super Admin two-step verification: set up an authenticator, or enter its code (security/AUDIT.md F-02).
+        element: <RequireAuth step="/admin/two-factor" />,
+        children: [{ element: <AuthLayout />, children: [{ path: '/admin/two-factor', ...page(authPages.twoFactor, 'TwoFactorPage') }] }],
       },
       {
         element: <RequireAuth />,
@@ -140,3 +148,8 @@ const routes: RouteObject[] = [
 
 export const router = createBrowserRouter(routes);
 setNavigate((to, opts) => void router.navigate(to, opts));
+
+// Visitor analytics (CampusHub Sentinel): one page view per page change; a no-op unless configured.
+startAnalytics();
+trackPageview(router.state.location.pathname);
+router.subscribe((state) => trackPageview(state.location.pathname));

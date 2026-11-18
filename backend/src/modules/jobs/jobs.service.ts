@@ -88,6 +88,17 @@ async function runHousekeeping(): Promise<boolean> {
   await pool.query(`delete from public.email_log where created_at < now() - interval '90 days'`);
   await pool.query('delete from public.auth_verifications where expires_at < now()');
   await pool.query('delete from public.auth_sessions where expires_at < now()');
+  // Sign-in throttle rows whose window and lock are long over (security/AUDIT.md F-02).
+  await pool.query(
+    `delete from public.auth_login_throttle where updated_at < now() - interval '1 day' and (locked_until is null or locked_until < now())`,
+  );
+  // Better Auth rate-limit windows that ended long ago (F-06).
+  await pool.query(`delete from public.auth_rate_limits where window_start < now() - interval '1 day'`);
+  // Abandoned two-step setups (never enabled) keep no secret around.
+  await pool.query(
+    `update public.user_mfa set pending_secret = null, pending_created_at = null
+      where pending_secret is not null and pending_created_at < now() - interval '1 day'`,
+  );
   return true;
 }
 

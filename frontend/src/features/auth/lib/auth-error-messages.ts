@@ -4,7 +4,11 @@ export function authErrorMessage(error: { code?: string; status?: number; messag
   const code = error.code ?? '';
   if (code === 'INVALID_EMAIL_OR_PASSWORD' || error.status === 401) return 'Incorrect email or password.';
   if (code === 'ACCOUNT_DEACTIVATED') return 'Your account has been deactivated. Contact an administrator.';
+  // Per-account back-off (the server's message says how long and mentions the password reset).
+  if (code === 'SIGN_IN_LOCKED' && error.message) return error.message;
   if (error.status === 429) return 'Too many attempts. Please wait a moment and try again.';
+  // The server explains which rule failed (common password, Super Admin length).
+  if (code === 'WEAK_PASSWORD' && error.message) return error.message;
   if (code === 'WEAK_PASSWORD' || code === 'PASSWORD_TOO_SHORT' || code === 'PASSWORD_TOO_LONG')
     return 'Password must be at least 8 characters and include a letter and a number.';
   if (code === 'INVALID_TOKEN') return 'This reset link is invalid or has expired. Request a new one.';

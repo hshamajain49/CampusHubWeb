@@ -4,8 +4,8 @@ import sharp from 'sharp';
 import { appError } from '../errors/app-error.js';
 
 const FORMATS = new Set(['jpeg', 'png', 'webp']);
-/** Rejects decompression bombs before decoding pixels (12 000 × 12 000). */
-const MAX_INPUT_PIXELS = 12_000 * 12_000;
+/** Rejects decompression bombs before decoding pixels (12 000 × 12 000). Also used for venue photos. */
+export const MAX_INPUT_PIXELS = 12_000 * 12_000;
 
 export interface ProcessedImage {
   full: { body: Buffer; width: number; height: number; size: number };

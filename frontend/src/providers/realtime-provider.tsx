@@ -7,7 +7,7 @@ import { apiFetch } from '@/lib/api-client';
 import { navigate } from '@/lib/navigation';
 import { usePublicSettings } from '@/hooks/use-public-settings';
 import { usePageVisible } from '@/hooks/misc';
-import { useAuth } from './auth-provider';
+import { nextStep, useAuth } from './auth-provider';
 
 type RealtimeStatus = 'off' | 'connecting' | 'connected' | 'disconnected';
 const RealtimeContext = React.createContext<RealtimeStatus>('off');
@@ -36,7 +36,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(t);
   }, [visible]);
 
-  const enabled = authStatus === 'authenticated' && !!profile && !profile.mustChangePassword && !!settings?.realtimeEnabled && awake;
+  const enabled = authStatus === 'authenticated' && !!profile && nextStep(profile) === null && !!settings?.realtimeEnabled && awake;
   const userId = profile?.id;
   const isAdmin = profile?.role === 'super_admin';
 

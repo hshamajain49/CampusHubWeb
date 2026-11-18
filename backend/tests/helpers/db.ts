@@ -65,7 +65,9 @@ export async function baseFixtures(c: pg.PoolClient) {
 export async function truncateAll() {
   await pool.query(
     `truncate notifications, email_log, booking_reminders, push_subscriptions, booking_history, bookings,
-              venue_blocks, audit_logs, complaint_history, complaint_attachments, complaints, venues restart identity cascade`,
+              venue_blocks, audit_logs, complaint_history, complaint_attachments, complaints, venues, auth_login_throttle,
+              auth_rate_limits
+              restart identity cascade`,
   );
   await pool.query('update app_settings set updated_by = null where id = 1');
   await pool.query('delete from auth_users');

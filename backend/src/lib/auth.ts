@@ -2,11 +2,39 @@
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { bearer } from 'better-auth/plugins';
-import { passwordSchema } from '@campushub/shared';
+import { passwordSchema, SUPER_ADMIN_MIN_PASSWORD_LENGTH } from '@campushub/shared';
 import { config } from '../config/env.js';
 import { pool } from '../db/pool.js';
 import { sendPasswordResetEmail } from './email/email-service.js';
 import { logger } from './logger.js';
+import { accountKey, checkSignInThrottle, clearSignInThrottle, clientIpFromHeaders, recordSignInFailure, recordSignInSuccess } from './login-throttle.js';
+import { currentRequest } from './request-context.js';
+import { sentinel, type SecurityEvent } from './sentinel.js';
+import { authRateLimitStore } from './auth-rate-limit.js';
+
+/** Sign-in outcomes for Sentinel. The account appears only as a keyed hash (accountKey), never as an email address. */
+function reportSignIn(email: string, e: Omit<SecurityEvent, 'route'>) {
+  if (!sentinel.enabled) return;
+  try {
+    const req = currentRequest.getStore();
+    const event = { ...e, route: '/api/auth/sign-in/email', details: { accountKey: accountKey(email), ...e.details } };
+    if (req) sentinel.reportRequest(req, event);
+    else sentinel.report(event);
+  } catch (err) {
+    logger.warn({ err }, 'sentinel sign-in report failed');
+  }
+}
+
+const minutes = (seconds: number) => Math.max(1, Math.ceil(seconds / 60));
+
+/** Throttle bookkeeping must never turn a sign-in into a 500: on a database hiccup it logs and lets Better Auth decide. */
+async function safely(what: string, fn: () => Promise<unknown>) {
+  try {
+    await fn();
+  } catch (err) {
+    logger.error({ err }, `sign-in throttle: ${what} failed`);
+  }
+}
 
 const TIMESTAMPS = { createdAt: 'created_at', updatedAt: 'updated_at' } as const;
 
@@ -38,6 +66,8 @@ export const auth = betterAuth({
     },
     onPasswordReset: async ({ user }) => {
       await pool.query('update public.profiles set must_change_password = false where id = $1', [user.id]);
+      // The owner proved control of the mailbox: lift any sign-in lock on the account (F-02).
+      await safely('clear after reset', () => clearSignInThrottle(user.email));
     },
   },
   user: { modelName: 'auth_users', fields: { emailVerified: 'email_verified', ...TIMESTAMPS } },
@@ -69,7 +99,8 @@ export const auth = betterAuth({
   },
   rateLimit: {
     enabled: !testing,
-    storage: 'memory',
+    // In Postgres, so limits survive restarts and deploys (F-06); keyed by the address Express resolved.
+    customStorage: authRateLimitStore,
     window: 60,
     max: 100,
     customRules: {
@@ -101,14 +132,80 @@ export const auth = betterAuth({
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path === '/sign-in/email') {
+        // Per-account back-off (F-02). A locked account is refused before the password is checked, so guesses made
+        // while locked are never evaluated. The same answer is given whether or not the account exists.
+        const email = (ctx.body as { email?: unknown } | undefined)?.email;
+        if (typeof email !== 'string' || !email) return;
+        let state = { locked: false, retryAfterSeconds: 0 };
+        await safely('check', async () => {
+          state = await checkSignInThrottle(email, clientIpFromHeaders(ctx.headers));
+        });
+        if (state.locked) {
+          reportSignIn(email, { category: 'auth.login_locked', severity: 'medium', statusCode: 429, description: 'A sign-in was refused because the account is temporarily locked after repeated failures.' });
+          throw new APIError(
+            'TOO_MANY_REQUESTS',
+            {
+              code: 'SIGN_IN_LOCKED',
+              message: `Too many failed sign-in attempts. Try again in ${minutes(state.retryAfterSeconds)} minute${minutes(state.retryAfterSeconds) === 1 ? '' : 's'}, or reset your password.`,
+            },
+            { 'Retry-After': String(state.retryAfterSeconds) },
+          );
+        }
+      }
       if (ctx.path === '/reset-password') {
-        const pw = (ctx.body as { newPassword?: unknown } | undefined)?.newPassword;
-        if (typeof pw !== 'string' || !passwordSchema.safeParse(pw).success) {
+        const body = ctx.body as { newPassword?: unknown; token?: unknown } | undefined;
+        const pw = body?.newPassword;
+        const parsed = typeof pw === 'string' ? passwordSchema.safeParse(pw) : null;
+        if (!parsed?.success) {
           throw new APIError('BAD_REQUEST', {
             code: 'WEAK_PASSWORD',
-            message: 'Password must be at least 8 characters and include a letter and a number.',
+            message: parsed?.error.issues[0]?.message ?? 'Password must be at least 8 characters and include a letter and a number.',
           });
         }
+        // Super Admins need a longer password (F-09). The token tells us whose password this is.
+        const token = typeof body?.token === 'string' ? body.token : typeof ctx.query?.token === 'string' ? ctx.query.token : null;
+        if (token && (pw as string).length < SUPER_ADMIN_MIN_PASSWORD_LENGTH) {
+          const verification = await ctx.context.internalAdapter.findVerificationValue(`reset-password:${token}`);
+          if (verification?.value) {
+            const { rows } = await pool.query<{ role: string }>('select role from public.profiles where id = $1', [verification.value]);
+            if (rows[0]?.role === 'super_admin') {
+              throw new APIError('BAD_REQUEST', {
+                code: 'WEAK_PASSWORD',
+                message: `Super Admin passwords must be at least ${SUPER_ADMIN_MIN_PASSWORD_LENGTH} characters.`,
+              });
+            }
+          }
+        }
+      }
+    }),
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== '/sign-in/email') return;
+      const email = (ctx.body as { email?: unknown } | undefined)?.email;
+      if (typeof email !== 'string' || !email) return;
+      const ip = clientIpFromHeaders(ctx.headers);
+      const returned = ctx.context.returned as { statusCode?: number; body?: { code?: string } } | undefined;
+      if (returned instanceof APIError || (returned && typeof returned.statusCode === 'number')) {
+        // Only a wrong email/password counts. A deactivated account (403) or a lock (429) is not a guess.
+        if (returned?.statusCode === 401 || returned?.body?.code === 'INVALID_EMAIL_OR_PASSWORD') {
+          await safely('record failure', () => recordSignInFailure(email, ip));
+          reportSignIn(email, { category: 'auth.login_failed', severity: 'low', statusCode: 401, description: 'A sign-in failed: wrong email or password.' });
+        }
+        return;
+      }
+      await safely('record success', () => recordSignInSuccess(email, ip));
+      if (sentinel.enabled) {
+        await safely('sentinel success report', async () => {
+          const { rows } = await pool.query<{ id: string; role: string }>('select id, role from public.profiles where lower(email) = lower($1)', [email]);
+          reportSignIn(email, {
+            category: 'auth.login_succeeded',
+            severity: 'info',
+            statusCode: 200,
+            userRef: rows[0]?.id ?? null,
+            actorRole: rows[0]?.role ?? null,
+            description: rows[0]?.role === 'super_admin' ? 'A Super Admin signed in (password step).' : 'A user signed in.',
+          });
+        });
       }
     }),
   },

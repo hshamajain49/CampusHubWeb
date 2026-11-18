@@ -66,6 +66,17 @@ const schema = z
     NEON_COMPLAINT_BUCKET: z.string().default('complaint-photos'),
     NEON_BRANCH: optional, // informational; written by `npm run neon:env`, used by the dev seed guard
     CRON_SECRET: z.string().min(32, 'CRON_SECRET must be at least 32 characters'),
+    // Security hardening (security/AUDIT.md F-02, F-05, F-10)
+    /** TOTP for Super Admins: 'required' (the default, and the only value allowed in production) or 'off'. */
+    SUPER_ADMIN_MFA: z.enum(['required', 'off']).optional(),
+    /** Absolute lifetime of a Super Admin session, in hours (members keep Better Auth's 7-day rolling session). */
+    SUPER_ADMIN_SESSION_HOURS: z.coerce.number().int().min(1).max(168).default(12),
+    /** Lets a production API start on a database that contains the seeded @demo.edu accounts (a deliberate demo). */
+    ALLOW_DEMO_DATA: bool.default(false),
+    // CampusHub Sentinel (developers' monitoring service). All three or none; none = reporting off.
+    SENTINEL_URL: z.preprocess((v) => (v === '' ? undefined : v), z.url().optional()),
+    SENTINEL_INGEST_KEY_ID: optional,
+    SENTINEL_INGEST_SECRET: optional,
   })
   .superRefine((v, ctx) => {
     if (v.EMAIL_TRANSPORT === 'brevo' && (!v.BREVO_API_KEY || !v.EMAIL_FROM_ADDRESS)) {
@@ -77,6 +88,16 @@ const schema = z
     const photoStore = v.COMPLAINT_PHOTO_STORE ?? (v.IMAGE_STORE === 'fake' ? 'fake' : 'neon');
     if (v.NODE_ENV === 'production' && photoStore === 'fake') {
       ctx.addIssue({ code: 'custom', path: ['COMPLAINT_PHOTO_STORE'], message: 'COMPLAINT_PHOTO_STORE=fake is refused in production' });
+    }
+    if (v.NODE_ENV === 'production' && v.SUPER_ADMIN_MFA === 'off') {
+      ctx.addIssue({ code: 'custom', path: ['SUPER_ADMIN_MFA'], message: 'SUPER_ADMIN_MFA=off is refused in production' });
+    }
+    const sentinel = [v.SENTINEL_URL, v.SENTINEL_INGEST_KEY_ID, v.SENTINEL_INGEST_SECRET].filter(Boolean).length;
+    if (sentinel !== 0 && sentinel !== 3) {
+      ctx.addIssue({ code: 'custom', path: ['SENTINEL_URL'], message: 'set SENTINEL_URL, SENTINEL_INGEST_KEY_ID and SENTINEL_INGEST_SECRET together (or none)' });
+    }
+    if (v.NODE_ENV === 'production' && v.SENTINEL_URL && !v.SENTINEL_URL.startsWith('https://')) {
+      ctx.addIssue({ code: 'custom', path: ['SENTINEL_URL'], message: 'SENTINEL_URL must be https in production' });
     }
     if (v.IMAGE_STORE === 'neon' || photoStore === 'neon') {
       for (const key of ['AWS_ENDPOINT_URL_S3', 'AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'] as const) {
@@ -96,6 +117,8 @@ export const config = {
   ...parsed.data,
   /** Effective complaint photo store (COMPLAINT_PHOTO_STORE, or derived from IMAGE_STORE). */
   COMPLAINT_PHOTO_STORE: parsed.data.COMPLAINT_PHOTO_STORE ?? (parsed.data.IMAGE_STORE === 'fake' ? ('fake' as const) : ('neon' as const)),
+  /** Required in production; off by default in development and tests (set SUPER_ADMIN_MFA=required to try it locally). */
+  SUPER_ADMIN_MFA: (parsed.data.SUPER_ADMIN_MFA ?? (parsed.data.NODE_ENV === 'production' ? 'required' : 'off')) as 'required' | 'off',
 };
 export type Config = typeof config;
 
@@ -103,6 +126,7 @@ export const integrations = {
   email: config.EMAIL_TRANSPORT === 'brevo' ? 'configured' : config.EMAIL_TRANSPORT,
   push: config.VAPID_PUBLIC_KEY && config.VAPID_PRIVATE_KEY && config.VAPID_SUBJECT ? 'configured' : 'not_configured',
   realtime: config.ABLY_API_KEY ? 'configured' : 'not_configured',
+  sentinel: config.SENTINEL_URL ? 'configured' : 'not_configured',
   images: config.IMAGE_STORE !== 'cloudinary' || config.CLOUDINARY_URL ? 'configured' : 'not_configured',
 } as const;
 

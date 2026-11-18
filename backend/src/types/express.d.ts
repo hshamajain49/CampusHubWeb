@@ -1,4 +1,4 @@
-import type { Role } from '@campushub/shared';
+import type { MfaStatus, Role } from '@campushub/shared';
 
 export interface ProfileRow {
   id: string;
@@ -24,8 +24,10 @@ declare global {
   namespace Express {
     interface Request {
       id: string;
-      auth?: { userId: string; sessionId: string };
+      auth?: { userId: string; sessionId: string; sessionCreatedAt: Date };
       profile?: ProfileRow;
+      /** Two-step verification state of this session (set by requireMfa or GET /me). */
+      mfa?: MfaStatus;
       /** Set by requireServiceDepartment for the staff workspace. */
       serviceDepartment?: { id: string; name: string };
       valid: { params: any; query: any; body: any };

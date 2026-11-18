@@ -6,6 +6,7 @@ import { authClient } from '@/lib/auth-client';
 import { apiFetch, ApiError, setApiHandlers } from '@/lib/api-client';
 import { clearToken, getToken, onTokenRemovedElsewhere } from '@/lib/session-token';
 import { navigate } from '@/lib/navigation';
+import { setAnalyticsUser } from '@/lib/analytics';
 import { authErrorMessage } from '@/features/auth/lib/auth-error-messages';
 
 type Status = 'loading' | 'unauthenticated' | 'authenticated';
@@ -63,6 +64,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const profile = status === 'authenticated' ? (me.data ?? null) : null;
+  // Analytics links page views to the account only when VITE_SENTINEL_LINK_USERS=true (off by default).
+  React.useEffect(() => setAnalyticsUser(profile?.id ?? null), [profile?.id]);
 
   const signOut = React.useCallback(
     async (reason: SignOutReason = 'signed_out', opts: { callApi?: boolean } = {}) => {
@@ -110,9 +113,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       onUnauthenticated: () => void signOut('session_expired', { callApi: false }),
       onDeactivated: () => void signOut('deactivated', { callApi: false }),
       onPasswordChangeRequired: () => navigate('/change-password', { replace: true }),
+      // The profile's mfa.verified is stale (e.g. the session was reset): refetch it and go to the second step.
+      onMfaRequired: () => {
+        void qc.invalidateQueries({ queryKey: ['me'] });
+        if (window.location.pathname !== TWO_FACTOR_PATH) navigate(TWO_FACTOR_PATH, { replace: true });
+      },
     });
     return onTokenRemovedElsewhere(() => void signOut('signed_out', { callApi: false }));
-  }, [signOut]);
+  }, [signOut, qc]);
 
   const signIn = React.useCallback(
     async (email: string, password: string) => {
@@ -142,6 +150,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [status, profile, signIn, signOut, refreshProfile, signOutTarget],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export const TWO_FACTOR_PATH = '/admin/two-factor';
+
+/**
+ * Set while the two-step page shows the one-time recovery codes: the session is already verified, but the guard must
+ * not send the user away (a /me refetch on window focus would) until they've saved the codes and pressed Continue.
+ */
+export const twoFactorHold = { current: false };
+
+/**
+ * The step a signed-in user must finish before anything else, or null. An enrolled Super Admin proves the second
+ * factor first (even before replacing a temporary password); a new one replaces the temporary password, then sets
+ * up the authenticator. The API enforces the same order (requireMfa, requirePasswordFresh).
+ */
+export function nextStep(profile: Me): '/change-password' | typeof TWO_FACTOR_PATH | null {
+  const mfaPending = profile.mfa.required && !profile.mfa.verified;
+  if (mfaPending && profile.mfa.enrolled) return TWO_FACTOR_PATH;
+  if (profile.mustChangePassword) return '/change-password';
+  if (mfaPending) return TWO_FACTOR_PATH;
+  return null;
 }
 
 export function roleHome(role: Me['role']): string {

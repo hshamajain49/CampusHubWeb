@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { toNodeHandler } from 'better-auth/node';
 import { appVersion, config } from './config/env.js';
+import { currentRequest } from './lib/request-context.js';
 import { logger } from './lib/logger.js';
 import { auth } from './lib/auth.js';
 import { pool } from './db/pool.js';
@@ -14,6 +15,7 @@ import { requestId } from './middleware/request-id.js';
 import { limits } from './middleware/rate-limiters.js';
 import { requireCronSecret } from './middleware/require-cron-secret.js';
 import { errorHandler, notFound } from './middleware/error-handler.js';
+import { blocklistGuard, countTraffic, inspectInput } from './middleware/monitoring.js';
 import { validationError } from './errors/app-error.js';
 import { fakeImagesDir } from './lib/image-store.js';
 import { verifyFakeSignedUrl } from './lib/storage.js';
@@ -52,6 +54,9 @@ export function createApp() {
       maxAge: 600,
     }),
   );
+  // 5b. Sentinel: per-minute traffic counts, then refuse addresses Sentinel has blocked (never /health)
+  app.use(countTraffic);
+  app.use(blocklistGuard);
   // 6. global rate limit (skips /health)
   app.use(limits.global);
   // 7. health checks — /health never touches the database (§10.13)
@@ -67,9 +72,12 @@ export function createApp() {
     }
   });
   // 8. Better Auth — BEFORE express.json(), it reads the raw body itself
-  app.all('/api/auth/*splat', toNodeHandler(auth));
+  const authHandler = toNodeHandler(auth);
+  app.all('/api/auth/*splat', (req, res) => currentRequest.run(req, () => authHandler(req, res)));
   // 9. JSON body parser
   app.use(express.json({ limit: '100kb' }));
+  // Sentinel: injection-like input is reported (observe only; it never changes how a request is handled)
+  app.use(inspectInput);
   // Authenticated responses are never cached
   app.use('/api/v1', (req, res, next) => {
     if (req.path !== '/settings/public') res.setHeader('Cache-Control', 'no-store');

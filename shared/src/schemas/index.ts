@@ -18,6 +18,7 @@ import {
   uuid,
 } from './common.js';
 import { diffDays, localDateTimeToMinutes, timeToMinutes } from '../time.js';
+import { COMMON_PASSWORD_MESSAGE, isAllowedPushEndpoint, isCommonPassword } from '../rules/security-rules.js';
 
 export * from './common.js';
 export * from './complaints.js';
@@ -35,7 +36,8 @@ export const passwordSchema = z
   .min(8, PASSWORD_POLICY_MESSAGE)
   .max(72, 'Password must be at most 72 characters')
   .regex(/[A-Za-z]/, PASSWORD_POLICY_MESSAGE)
-  .regex(/\d/, PASSWORD_POLICY_MESSAGE);
+  .regex(/\d/, PASSWORD_POLICY_MESSAGE)
+  .refine((v) => !isCommonPassword(v), COMMON_PASSWORD_MESSAGE);
 
 export const fullNameSchema = z
   .string()
@@ -80,8 +82,23 @@ export const updateMeBody = requireOne(
   ['fullName', 'department', 'emailNotifications'],
 );
 
+// ───────────────────────────── Two-step verification (Super Admin) ─────────────────────────────
+export const mfaSetupBody = z.strictObject({ password: z.string().min(1, 'Enter your password').max(72) });
+/** A 6-digit authenticator code, or a recovery code (xxxxx-xxxxx; the dash and case are optional). */
+export const mfaCodeBody = z.strictObject({
+  code: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/\s+/g, ''))
+    .pipe(z.string().regex(/^(\d{6}|[A-Za-z0-9]{5}-?[A-Za-z0-9]{5})$/, 'Enter the 6-digit code or a recovery code')),
+});
+
 export const pushSubscriptionBody = z.strictObject({
-  endpoint: z.string().max(1000).regex(/^https:\/\//, 'Endpoint must use https'),
+  endpoint: z
+    .string()
+    .max(1000)
+    .regex(/^https:\/\//, 'Endpoint must use https')
+    .refine(isAllowedPushEndpoint, 'Unsupported push service'),
   expirationTime: z.number().nullable().optional(),
   keys: z.strictObject({
     p256dh: z.string().min(1).max(200),

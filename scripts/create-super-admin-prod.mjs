@@ -7,6 +7,9 @@
 // backend/src/config/env.ts), so `DATABASE_URL=... npm run create-super-admin` would silently hit dev. This passes
 // the production values straight to the script with ENV_FILE=none. Nothing is written to disk.
 // `--env <file>` targets another branch's pulled env file instead (e.g. --env .env.local for dev).
+//
+// The same wrapper resets a Super Admin's two-step verification (lost phone; security/AUDIT.md F-02):
+//   npm run reset-mfa:prod -- --email admin@college.edu
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
@@ -16,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
+const resetFlag = args.indexOf('--reset-mfa');
+const script = resetFlag >= 0 ? (args.splice(resetFlag, 1), 'src/scripts/reset-mfa.ts') : 'src/scripts/create-super-admin.ts';
 const envFlag = args.indexOf('--env');
 const envFile = path.resolve(root, envFlag >= 0 ? args.splice(envFlag, 2)[1] ?? '' : '.env.production.local');
 
@@ -66,7 +71,7 @@ const env = {
 };
 
 const tsx = createRequire(path.join(root, 'backend', 'package.json')).resolve('tsx/cli');
-const result = spawnSync(process.execPath, [tsx, 'src/scripts/create-super-admin.ts', ...args], {
+const result = spawnSync(process.execPath, [tsx, script, ...args], {
   cwd: path.join(root, 'backend'),
   env,
   stdio: 'inherit',

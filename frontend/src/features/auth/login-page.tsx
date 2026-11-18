@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { LogIn } from 'lucide-react';
 import { useDocumentTitle } from '@/hooks/misc';
 import { usePublicSettings } from '@/hooks/use-public-settings';
-import { canAccess, roleHome, useAuth } from '@/providers/auth-provider';
+import { canAccess, nextStep, roleHome, useAuth } from '@/providers/auth-provider';
 import { safeRedirect } from '@/lib/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,8 +43,10 @@ export function LoginPage({ variant }: { variant: 'member' | 'admin' }) {
     setError(null);
     try {
       const me = await signIn(v.email, v.password);
-      if (me.mustChangePassword) return navigate('/change-password', { replace: true });
       const target = safeRedirect(params.get('redirectTo'));
+      // A pending step (new password, two-step verification) comes first; the deep link is kept for afterwards.
+      const step = nextStep(me);
+      if (step) return navigate(target && canAccess(me.role, target) ? `${step}?redirectTo=${encodeURIComponent(target)}` : step, { replace: true });
       navigate(target && canAccess(me.role, target) ? target : roleHome(me.role), { replace: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Something went wrong. Please try again.';

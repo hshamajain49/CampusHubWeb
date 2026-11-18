@@ -4,6 +4,7 @@ import { ZodError } from 'zod';
 import { AppError, appError, validationError } from '../errors/app-error.js';
 import { mapPgError } from '../db/errors.js';
 import { logger } from '../lib/logger.js';
+import { reportError } from './monitoring.js';
 
 export const notFound: RequestHandler = (_req, _res, next) => next(appError('NOT_FOUND', 'Route not found'));
 
@@ -27,6 +28,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     logger.warn({ code: e.code, reqId: req.id, path: req.path }, 'forbidden');
   }
 
+  reportError(req, e);
   if (res.headersSent) return;
   res.status(e.status).json({
     error: { code: e.code, message: e.message, details: e.details ?? null, requestId: req.id },

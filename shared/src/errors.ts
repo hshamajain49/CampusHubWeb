@@ -6,7 +6,13 @@ export const ERROR_HTTP_STATUS = {
   FORBIDDEN: 403,
   ACCOUNT_DEACTIVATED: 403,
   PASSWORD_CHANGE_REQUIRED: 403,
+  /** Super Admin: this session hasn't passed the second step (TOTP) yet. */
+  MFA_REQUIRED: 403,
+  /** Super Admin: two-step verification must be set up before the admin area can be used. */
+  MFA_ENROLLMENT_REQUIRED: 403,
   REGISTRATION_DISABLED: 403,
+  /** This network address is temporarily blocked by the monitoring service (Sentinel). */
+  ACCESS_BLOCKED: 403,
   NOT_FOUND: 404,
   VENUE_NOT_FOUND: 404,
   BOOKING_NOT_FOUND: 404,
@@ -31,6 +37,9 @@ export const ERROR_HTTP_STATUS = {
   EMAIL_ALREADY_REGISTERED: 409,
   REQUESTER_INACTIVE: 409,
   PROTECTED_ACCOUNT: 409,
+  MFA_ALREADY_ENABLED: 409,
+  /** enable without a setup in progress (or the setup is older than 15 minutes). */
+  MFA_SETUP_EXPIRED: 409,
   /** The only active Super Admin can't delete their account: the system would have no administrator. */
   LAST_SUPER_ADMIN: 409,
   COMPLAINT_CHANGED: 409,
@@ -55,6 +64,7 @@ export const ERROR_HTTP_STATUS = {
   IMAGE_INVALID: 422,
   IMAGE_TOO_LARGE: 422,
   INVALID_CURRENT_PASSWORD: 422,
+  MFA_INVALID_CODE: 422,
   CATEGORY_INACTIVE: 422,
   OPEN_COMPLAINT_LIMIT_REACHED: 422,
   TOO_MANY_FILES: 422,
@@ -66,6 +76,8 @@ export const ERROR_HTTP_STATUS = {
   /** 403 for staff whose department is inactive; services raise it as 422 when a category targets one. */
   DEPARTMENT_INACTIVE: 403,
   RATE_LIMITED: 429,
+  /** Too many wrong verification codes: the second step is paused for this account. */
+  MFA_LOCKED: 429,
   INTERNAL_ERROR: 500,
   UPSTREAM_ERROR: 502,
   STORAGE_ERROR: 502,
@@ -81,7 +93,14 @@ export const DEFAULT_ERROR_MESSAGES: Partial<Record<ErrorCode, string>> = {
   FORBIDDEN: "You don't have access to this area.",
   ACCOUNT_DEACTIVATED: 'Your account has been deactivated. Contact an administrator.',
   PASSWORD_CHANGE_REQUIRED: 'Please choose a new password to continue.',
+  MFA_REQUIRED: 'Enter the code from your authenticator app to continue.',
+  MFA_ENROLLMENT_REQUIRED: 'Set up two-step verification to continue.',
+  MFA_ALREADY_ENABLED: 'Two-step verification is already set up.',
+  MFA_SETUP_EXPIRED: 'This setup has expired. Start again.',
+  MFA_INVALID_CODE: "That code didn't work. Check your authenticator app and try again.",
+  MFA_LOCKED: 'Too many wrong codes. Wait a few minutes and try again.',
   REGISTRATION_DISABLED: 'Registration is closed. Contact the administrator for an account.',
+  ACCESS_BLOCKED: 'Access from your network is temporarily blocked. Try again later or contact the administrator.',
   NOT_FOUND: 'Not found.',
   VENUE_NOT_FOUND: "This venue doesn't exist or isn't accepting bookings.",
   BOOKING_NOT_FOUND: 'Booking not found.',

@@ -25,8 +25,10 @@ type Handlers = {
   onUnauthenticated: () => void;
   onDeactivated: () => void;
   onPasswordChangeRequired: () => void;
+  /** MFA_REQUIRED / MFA_ENROLLMENT_REQUIRED: a Super Admin session that hasn't passed two-step verification. */
+  onMfaRequired: () => void;
 };
-let handlers: Handlers = { onUnauthenticated: () => {}, onDeactivated: () => {}, onPasswordChangeRequired: () => {} };
+let handlers: Handlers = { onUnauthenticated: () => {}, onDeactivated: () => {}, onPasswordChangeRequired: () => {}, onMfaRequired: () => {} };
 export function setApiHandlers(h: Handlers) {
   handlers = h;
 }
@@ -102,6 +104,7 @@ async function raw(path: string, opts: ApiOptions = {}): Promise<{ res: Response
   if (res.status === 401 && !opts.silentAuth) handlers.onUnauthenticated();
   if (err.code === 'ACCOUNT_DEACTIVATED') handlers.onDeactivated();
   if (err.code === 'PASSWORD_CHANGE_REQUIRED') handlers.onPasswordChangeRequired();
+  if (err.code === 'MFA_REQUIRED' || err.code === 'MFA_ENROLLMENT_REQUIRED') handlers.onMfaRequired();
   throw err;
 }
 

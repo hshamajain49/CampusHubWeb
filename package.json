@@ -31,7 +31,8 @@
     "db:dump": "node scripts/db-dump.mjs",
     "db:local:stop": "node scripts/local-db.mjs stop",
     "neon:env": "node scripts/neon-env.mjs",
-    "create-super-admin:prod": "node scripts/create-super-admin-prod.mjs"
+    "create-super-admin:prod": "node scripts/create-super-admin-prod.mjs",
+    "reset-mfa:prod": "node scripts/create-super-admin-prod.mjs --reset-mfa"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

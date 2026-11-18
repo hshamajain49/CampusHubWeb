@@ -82,6 +82,10 @@ export function AppFooter() {
           </a>
         </>
       )}
+      {' · '}
+      <Link to="/privacy" className="font-medium text-primary hover:underline">
+        Privacy
+      </Link>
     </footer>
   );
 }

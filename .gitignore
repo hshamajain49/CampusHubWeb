@@ -20,3 +20,9 @@ e2e/screens
 
 # UI audit output (node e2e/scripts/ui-audit.mjs)
 ui-audit/
+
+# Security findings and monitoring plans: this repository is public, so they are kept out of git here
+# (they belong in the private campushub-sentinel repository). The security tooling itself is committed.
+security/AUDIT.md
+security/PLAN.md
+security/reports/
