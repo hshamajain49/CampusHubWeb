@@ -1,6 +1,14 @@
 // Dev users and sample bookings (§26.6). Uses the account helpers so password hashes are valid.
 // Refuses production and non-local databases, except a non-production Neon branch (NEON_BRANCH) or --allow-remote.
-//   --if-empty   skip when users already exist (used by `npm run local`); seeds venues from dev.sql when none exist.
+//   --if-empty       skip when users already exist (used by `npm run local`); seeds venues from dev.sql when none exist.
+//   --presentation   the same sample data, but accounts on another domain (default example.edu) with passwords
+//                    generated now. They are written to backend/.tmp/presentation-accounts.txt (git-ignored) and never
+//                    to the repository, so the API's demo-data guard (lib/demo-guard.ts) has nothing to refuse.
+//     --domain <d>   email domain for those accounts; --institution "<name>" the institution name to show.
+//   --reset --confirm-branch <name>   first DELETES ALL DATA on the target: users, bookings, complaints, suggestions,
+//                    notifications, venues, audit log. Settings, departments and categories are kept. <name> must
+//                    equal NEON_BRANCH (or "local"), so the wrong database can't be wiped by accident.
+import { randomInt } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { addDays } from '@campushub/shared';
@@ -14,6 +22,10 @@ import sharp from 'sharp';
 import { insertAttachments, preparePhotos } from '../modules/complaints/complaint-photos.js';
 
 const args = new Set(process.argv.slice(2));
+const argValue = (name: string): string | undefined => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+};
 const host = new URL(config.DATABASE_URL).hostname;
 if (config.NODE_ENV === 'production') {
   console.error('seed-dev refuses to run with NODE_ENV=production');
@@ -26,16 +38,85 @@ if (!['localhost', '127.0.0.1', '::1'].includes(host) && !args.has('--allow-remo
   process.exit(1);
 }
 
-const USERS = [
-  { email: 'admin@demo.edu', password: 'Admin12345', name: 'Venue Administrator', role: 'super_admin', department: null },
-  { email: 'student@demo.edu', password: 'Student12345', name: 'Priya Sharma', role: 'student', department: 'Computer Science' },
-  { email: 'faculty@demo.edu', password: 'Faculty12345', name: 'Daniel Okafor', role: 'faculty_staff', department: 'Physics' },
-  { email: 'ananya.iyer@demo.edu', password: 'Student12345', name: 'Ananya Iyer', role: 'student', department: 'Electronics' },
-  { email: 'rahul.mehta@demo.edu', password: 'Student12345', name: 'Rahul Mehta', role: 'student', department: 'Mechanical Engineering' },
+type Key = 'admin' | 'student' | 'faculty' | 'ananya' | 'rahul' | 'electrical' | 'plumbing';
+interface SeedUser {
+  key: Key;
+  email: string;
+  password: string;
+  name: string;
+  role: 'super_admin' | 'student' | 'faculty_staff' | 'department_staff';
+  department: string | null;
+  service?: string;
+}
+const DEMO_USERS: SeedUser[] = [
+  { key: 'admin', email: 'admin@demo.edu', password: 'Admin12345', name: 'Venue Administrator', role: 'super_admin', department: null },
+  { key: 'student', email: 'student@demo.edu', password: 'Student12345', name: 'Priya Sharma', role: 'student', department: 'Computer Science' },
+  { key: 'faculty', email: 'faculty@demo.edu', password: 'Faculty12345', name: 'Daniel Okafor', role: 'faculty_staff', department: 'Physics' },
+  { key: 'ananya', email: 'ananya.iyer@demo.edu', password: 'Student12345', name: 'Ananya Iyer', role: 'student', department: 'Electronics' },
+  { key: 'rahul', email: 'rahul.mehta@demo.edu', password: 'Student12345', name: 'Rahul Mehta', role: 'student', department: 'Mechanical Engineering' },
   // Department staff (COMPLAINT_REGISTRATION_SPEC.md §18 "§26.6"): members with a service department.
-  { email: 'staff.electrical@demo.edu', password: 'Staff12345', name: 'Ravi Kumar', role: 'department_staff', department: null, service: 'Electrical Department' },
-  { email: 'staff.plumbing@demo.edu', password: 'Staff12345', name: 'Meera Nair', role: 'department_staff', department: null, service: 'Plumbing Department' },
-] as const;
+  { key: 'electrical', email: 'staff.electrical@demo.edu', password: 'Staff12345', name: 'Ravi Kumar', role: 'department_staff', department: null, service: 'Electrical Department' },
+  { key: 'plumbing', email: 'staff.plumbing@demo.edu', password: 'Staff12345', name: 'Meera Nair', role: 'department_staff', department: null, service: 'Plumbing Department' },
+];
+
+/** 14 characters like "Kx7m-Q2pd-9wLz": letters and digits (no look-alikes), always both; about 70 bits. */
+function generatePassword(): string {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  for (;;) {
+    const p = [0, 1, 2].map(() => Array.from({ length: 4 }, () => A[randomInt(A.length)]).join('')).join('-');
+    if (/[A-Za-z]/.test(p) && /\d/.test(p)) return p;
+  }
+}
+
+const PRESENTATION = args.has('--presentation');
+const DOMAIN = (argValue('domain') ?? 'example.edu').toLowerCase();
+if (PRESENTATION && (DOMAIN === 'demo.edu' || !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(DOMAIN))) {
+  console.error(`--domain must be a domain other than demo.edu (got "${DOMAIN}")`);
+  process.exit(1);
+}
+const USERS: SeedUser[] = PRESENTATION
+  ? DEMO_USERS.map((u) => ({ ...u, email: `${u.email.split('@')[0]}@${DOMAIN}`, password: generatePassword() }))
+  : DEMO_USERS;
+
+/**
+ * Deletes every user and everything they made, plus venues, so the seed starts from an empty database. Settings,
+ * service departments and complaint categories (reference data from the migrations) are kept.
+ */
+async function resetData() {
+  const target = config.NEON_BRANCH ?? (['localhost', '127.0.0.1', '::1'].includes(host) ? 'local' : '');
+  const confirm = argValue('confirm-branch');
+  if (!confirm || confirm !== target) {
+    console.error(`--reset deletes all data. Pass --confirm-branch ${target || '<branch>'} to confirm the target (this database: ${host}).`);
+    process.exit(1);
+  }
+  // One server-side block: identifiers are quoted by format('%I'), so no SQL is assembled here.
+  //  1. truncate everything except settings, reference data and the users (no CASCADE: nothing kept is hit);
+  //  2. kept rows that point at a user (who last edited a setting, created a category...) let go of it;
+  //  3. delete the users (profiles follow through their foreign key).
+  const { rows } = await pool.query<{ n: number }>(`select count(*)::int as n from pg_tables where schemaname = 'public'`);
+  await pool.query(`
+    do $$
+    declare
+      keep constant text[] := array['schema_migrations', 'app_settings', 'service_departments', 'complaint_categories', 'auth_users', 'profiles'];
+      tables text;
+      r record;
+    begin
+      select string_agg(format('public.%I', tablename), ', ' order by tablename) into tables
+        from pg_tables where schemaname = 'public' and tablename <> all(keep);
+      execute 'truncate ' || tables || ' restart identity';
+      for r in
+        select c.conrelid::regclass as tbl, a.attname as col
+          from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any(c.conkey)
+         where c.contype = 'f' and c.confrelid in ('public.profiles'::regclass, 'public.auth_users'::regclass)
+           and c.conrelid in ('public.app_settings'::regclass, 'public.service_departments'::regclass, 'public.complaint_categories'::regclass)
+      loop
+        execute format('update %s set %I = null where %I is not null', r.tbl, r.col, r.col);
+      end loop;
+      delete from public.auth_users;
+      delete from public.profiles;
+    end $$`);
+  console.log(`[seed] reset: all data deleted on ${target} (${rows[0]!.n - 4} tables); settings, departments and categories kept`);
+}
 
 async function ensureVenues() {
   const n = (await pool.query<{ n: number }>('select count(*) as n from public.venues')).rows[0]!.n;
@@ -47,33 +128,52 @@ async function ensureVenues() {
 }
 
 async function main() {
+  if (args.has('--reset')) await resetData();
   await ensureVenues();
+  if (PRESENTATION) {
+    const institution = argValue('institution');
+    await pool.query(
+      `update public.app_settings set support_email = $1${institution ? ', institution_name = $2' : ''} where id = 1`,
+      institution ? [`venues@${DOMAIN}`, institution] : [`venues@${DOMAIN}`],
+    );
+  }
   const existing = (await pool.query<{ n: number }>('select count(*) as n from public.auth_users')).rows[0]!.n;
   if (existing > 0 && args.has('--if-empty')) {
     console.log('[seed] users already exist — skipping');
     return;
   }
 
-  const ids: Record<string, string> = {};
+  const ids = {} as Record<Key, string>;
   for (const u of USERS) {
     const found = await pool.query<{ id: string }>('select id from public.profiles where lower(email) = $1', [u.email]);
     if (found.rows[0]) {
-      ids[u.email] = found.rows[0].id;
+      ids[u.key] = found.rows[0].id;
       continue;
     }
     const hash = await hashPassword(u.password);
-    ids[u.email] = await withTransaction({ actorId: null }, async (tx) => {
+    ids[u.key] = await withTransaction({ actorId: null }, async (tx) => {
       const id = await createCredentialUser(tx, { email: u.email, name: u.name, passwordHash: hash });
       await tx.query(
         `update public.profiles set role = $2, department = $3,
                 service_department_id = (select id from public.service_departments where name = $4) where id = $1`,
-        [id, u.role, u.department, 'service' in u ? u.service : null],
+        [id, u.role, u.department, u.service ?? null],
       );
       return id;
     });
   }
-  console.log('[seed] users: admin@demo.edu / Admin12345 · student@demo.edu / Student12345 · faculty@demo.edu / Faculty12345');
-  console.log('[seed] staff: staff.electrical@demo.edu / Staff12345 · staff.plumbing@demo.edu / Staff12345');
+  if (PRESENTATION) {
+    // Passwords exist only in this git-ignored file; they are not printed to the terminal.
+    const dir = path.resolve(process.cwd(), '.tmp');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'presentation-accounts.txt');
+    const roles: Record<SeedUser['role'], string> = { super_admin: 'Super Admin', student: 'Student', faculty_staff: 'Faculty / staff', department_staff: 'Department staff' };
+    const lines = USERS.map((u) => `${roles[u.role].padEnd(17)} ${u.name.padEnd(20)} ${u.email.padEnd(34)} ${u.password}${u.service ? `   (${u.service})` : ''}`);
+    fs.writeFileSync(file, `CampusHub presentation accounts (${config.NEON_BRANCH ?? host}, created ${new Date().toISOString()})\n\n${lines.join('\n')}\n`, { mode: 0o600 });
+    console.log(`[seed] ${USERS.length} accounts on @${DOMAIN}; emails and passwords in ${file}`);
+  } else {
+    console.log('[seed] users: admin@demo.edu / Admin12345 · student@demo.edu / Student12345 · faculty@demo.edu / Faculty12345');
+    console.log('[seed] staff: staff.electrical@demo.edu / Staff12345 · staff.plumbing@demo.edu / Staff12345');
+  }
   await seedComplaints(ids);
 
   const bookingCount = (await pool.query<{ n: number }>('select count(*) as n from public.bookings')).rows[0]!.n;
@@ -83,11 +183,7 @@ async function main() {
     (await pool.query<{ id: string; name: string }>('select id, name from public.venues')).rows.map((v) => [v.name, v.id]),
   );
   const { today } = await loadCampus(pool);
-  const admin = ids['admin@demo.edu']!;
-  const student = ids['student@demo.edu']!;
-  const faculty = ids['faculty@demo.edu']!;
-  const ananya = ids['ananya.iyer@demo.edu']!;
-  const rahul = ids['rahul.mehta@demo.edu']!;
+  const { admin, student, faculty, ananya, rahul } = ids;
 
   /** Inserts like the API: confirmed, or queued behind a confirmed booking; notifications for upcoming ones. */
   async function book(
@@ -181,7 +277,7 @@ const placeholder = (color: string) =>
   sharp({ create: { width: 1200, height: 900, channels: 3, background: color } }).jpeg({ quality: 80 }).toBuffer();
 
 /** Sample complaints across every status (§18 "§26.6"). Skipped when complaints already exist. */
-async function seedComplaints(ids: Record<string, string>) {
+async function seedComplaints(ids: Record<Key, string>) {
   const existing = (await pool.query<{ n: number }>('select count(*) as n from public.complaints')).rows[0]!.n;
   if (existing > 0) return console.log('[seed] complaints already exist — skipping');
   const cat = Object.fromEntries(
@@ -190,11 +286,9 @@ async function seedComplaints(ids: Record<string, string>) {
     ),
   );
   const venue = Object.fromEntries((await pool.query<{ id: string; name: string }>('select id, name from public.venues')).rows.map((v) => [v.name, v.id]));
-  const [student, faculty, ananya, rahul, admin] = ['student@demo.edu', 'faculty@demo.edu', 'ananya.iyer@demo.edu', 'rahul.mehta@demo.edu', 'admin@demo.edu'].map(
-    (e) => ids[e]!,
-  ) as [string, string, string, string, string];
-  const electrician = ids['staff.electrical@demo.edu']!;
-  const plumber = ids['staff.plumbing@demo.edu']!;
+  const { student, faculty, ananya, rahul, admin } = ids;
+  const electrician = ids.electrical;
+  const plumber = ids.plumbing;
   const act = (tx: Tx, actor: string | null, note: string | null = null) =>
     tx.query("select set_config('app.actor_id', $1, true), set_config('app.change_note', $2, true)", [actor ?? '', note ?? '']);
 

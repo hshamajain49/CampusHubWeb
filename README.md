@@ -98,6 +98,7 @@ Stop the embedded clusters with `npm run db:local:stop`.
 | `npm run db:dump` | `pg_dump` of the configured database into `backups/` |
 | `npm run create-super-admin -w @campushub/backend` | Provision a Super Admin account from the command line (on the database in `backend/.env`) |
 | `npm run create-super-admin:prod -- --email … --name "…"` | The same on the Neon **production** branch, using `.env.production.local` |
+| `npm run seed:presentation -w @campushub/backend -- --confirm-branch dev` | **Deletes all data** on the Neon branch in `backend/.env`, then seeds the sample data with accounts on `@example.edu` (`--domain` to change) and freshly generated passwords, saved to `backend/.tmp/presentation-accounts.txt` (git-ignored). No `@demo.edu` accounts, so even a production-mode API accepts the database. `--institution "Name"` sets the name shown. |
 | `npm run storage:sweep -w @campushub/backend` | Delete complaint photos older than 24 h that no complaint references (`-- --dry-run` to preview) |
 
 ## Complaints

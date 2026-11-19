@@ -13,6 +13,7 @@
     "create-super-admin": "tsx src/scripts/create-super-admin.ts",
     "reset-mfa": "tsx src/scripts/reset-mfa.ts",
     "seed:dev": "node ../scripts/with-node-env.mjs development tsx src/scripts/seed-dev.ts",
+    "seed:presentation": "node ../scripts/with-node-env.mjs development tsx src/scripts/seed-dev.ts --presentation --reset",
     "seed:if-empty": "node ../scripts/with-node-env.mjs development tsx src/scripts/seed-dev.ts --if-empty",
     "auth:check": "npx @better-auth/cli generate --config src/lib/auth.ts",
     "storage:sweep": "node ../scripts/with-node-env.mjs development tsx src/scripts/storage-sweep.ts"
