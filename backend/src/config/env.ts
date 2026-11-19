@@ -67,7 +67,10 @@ const schema = z
     NEON_BRANCH: optional, // informational; written by `npm run neon:env`, used by the dev seed guard
     CRON_SECRET: z.string().min(32, 'CRON_SECRET must be at least 32 characters'),
     // Security hardening (security/AUDIT.md F-02, F-05, F-10)
-    /** TOTP for Super Admins: 'required' (the default, and the only value allowed in production) or 'off'. */
+    /**
+     * TOTP for Super Admins: 'required' or 'off'. Off by default everywhere (owner decision, 2026-11-19: password only
+     * for now). 'required' turns it back on; Super Admins who already set up an authenticator keep it.
+     */
     SUPER_ADMIN_MFA: z.enum(['required', 'off']).optional(),
     /** Absolute lifetime of a Super Admin session, in hours (members keep Better Auth's 7-day rolling session). */
     SUPER_ADMIN_SESSION_HOURS: z.coerce.number().int().min(1).max(168).default(12),
@@ -88,9 +91,6 @@ const schema = z
     const photoStore = v.COMPLAINT_PHOTO_STORE ?? (v.IMAGE_STORE === 'fake' ? 'fake' : 'neon');
     if (v.NODE_ENV === 'production' && photoStore === 'fake') {
       ctx.addIssue({ code: 'custom', path: ['COMPLAINT_PHOTO_STORE'], message: 'COMPLAINT_PHOTO_STORE=fake is refused in production' });
-    }
-    if (v.NODE_ENV === 'production' && v.SUPER_ADMIN_MFA === 'off') {
-      ctx.addIssue({ code: 'custom', path: ['SUPER_ADMIN_MFA'], message: 'SUPER_ADMIN_MFA=off is refused in production' });
     }
     const sentinel = [v.SENTINEL_URL, v.SENTINEL_INGEST_KEY_ID, v.SENTINEL_INGEST_SECRET].filter(Boolean).length;
     if (sentinel !== 0 && sentinel !== 3) {
@@ -117,8 +117,8 @@ export const config = {
   ...parsed.data,
   /** Effective complaint photo store (COMPLAINT_PHOTO_STORE, or derived from IMAGE_STORE). */
   COMPLAINT_PHOTO_STORE: parsed.data.COMPLAINT_PHOTO_STORE ?? (parsed.data.IMAGE_STORE === 'fake' ? ('fake' as const) : ('neon' as const)),
-  /** Required in production; off by default in development and tests (set SUPER_ADMIN_MFA=required to try it locally). */
-  SUPER_ADMIN_MFA: (parsed.data.SUPER_ADMIN_MFA ?? (parsed.data.NODE_ENV === 'production' ? 'required' : 'off')) as 'required' | 'off',
+  /** Off unless SUPER_ADMIN_MFA=required (see the schema above). */
+  SUPER_ADMIN_MFA: (parsed.data.SUPER_ADMIN_MFA ?? 'off') as 'required' | 'off',
 };
 export type Config = typeof config;
 

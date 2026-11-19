@@ -365,7 +365,7 @@ async function superAdmin() {
   const first = await h('/api/v1/admin/users', { token });
   let usable = first.status === 200;
   if (first.status === 200) {
-    report.add('ADM-01', 'Admin area without a second step', 'info', { detail: 'this target runs SUPER_ADMIN_MFA=off (production refuses that setting)' });
+    report.add('ADM-01', 'Admin area without a second step', 'info', { detail: 'this target runs SUPER_ADMIN_MFA=off (password-only sign-in); the two-step checks are skipped' });
   } else if (first.code === 'MFA_ENROLLMENT_REQUIRED') {
     report.add('ADM-01', 'Admin area is closed until two-step verification is set up', 'pass', { detail: first.code });
     const setup = await h('/api/v1/me/mfa/setup', { method: 'POST', token, body: { password: A.admin.password } });

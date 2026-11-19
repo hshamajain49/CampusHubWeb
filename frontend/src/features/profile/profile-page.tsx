@@ -233,7 +233,7 @@ export function ProfilePage() {
         </section>
         <EditProfile me={me} />
         <ChangePassword role={me.role} />
-        {me.mfa.enrolled && <TwoStepCard me={me} />}
+        {me.mfa.required && me.mfa.enrolled && <TwoStepCard me={me} />}
         <Notifications me={me} />
         <SectionCard title="Session">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

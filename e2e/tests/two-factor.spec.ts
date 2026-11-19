@@ -1,5 +1,5 @@
 // Super Admin two-step verification in the browser (security/AUDIT.md F-02). Needs an API started with
-// SUPER_ADMIN_MFA=required (the default in production, off in development), so it is skipped unless E2E_MFA=1:
+// SUPER_ADMIN_MFA=required (off by default since 2026-11-19), so it is skipped unless E2E_MFA=1:
 //   SUPER_ADMIN_MFA=required on the API, then  E2E_MFA=1 npx playwright test two-factor
 // A throwaway Super Admin is created in the database with a temporary password (copied from the seeded demo admin's
 // hash) and deleted afterwards.

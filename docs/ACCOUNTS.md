@@ -75,9 +75,12 @@ counts failures **per account**, in Postgres, so the counts survive restarts:
 
 ### Two-step verification (Super Admin)
 
-Super Admins must use an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…; TOTP, 6
-digits, 30 seconds). It is required in production. `SUPER_ADMIN_MFA=off` is refused there and is the default only in
-development and tests.
+**Currently switched off** (decision of 2026-11-19): Super Admins sign in with their password only. The rest of this
+section describes the behaviour with `SUPER_ADMIN_MFA=required`, which turns it back on. Authenticators that were
+already set up are kept and asked for again; Super Admins without one set it up at their next sign-in.
+
+With it on, Super Admins use an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…; TOTP,
+6 digits, 30 seconds).
 
 - **First sign-in:** replace the temporary password, then `/admin/two-factor`:
   1. confirm the password;

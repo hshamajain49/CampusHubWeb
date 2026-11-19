@@ -66,10 +66,14 @@ services:
         sync: false
       - key: CRON_SECRET
         sync: false
-      # Security hardening (security fixes F-02, F-05, F-10). SUPER_ADMIN_MFA defaults to "required" in production and
-      # "off" is refused. Leave ALLOW_DEMO_DATA unset: the API then refuses to start on a seeded demo database.
+      # Security hardening (security fixes F-02, F-05, F-10). Leave ALLOW_DEMO_DATA unset: the API then refuses to start
+      # on a seeded demo database.
       - key: SUPER_ADMIN_SESSION_HOURS
         value: '12'
+      # Super Admin two-step verification: off for now (password only, owner decision 2026-11-19). "required" turns it
+      # back on; authenticators already set up are kept.
+      - key: SUPER_ADMIN_MFA
+        value: 'off'
       # CampusHub Sentinel (the developers' monitoring service). All three or none; unset = reporting off.
       # SENTINEL_URL is Sentinel's https origin; the key id and secret come from `npm run app:rotate-secret` there.
       - key: SENTINEL_URL

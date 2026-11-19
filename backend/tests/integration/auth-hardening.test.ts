@@ -219,3 +219,23 @@ describe('Super Admin two-step verification (F-02)', () => {
     expect((await pool.query('select count(*)::int as n from auth_sessions where user_id = $1', [adminId])).rows[0].n).toBeLessThan(6);
   });
 });
+
+describe('two-step verification switched off (SUPER_ADMIN_MFA=off, the setting since 2026-11-19)', () => {
+  const setMode = (m: 'required' | 'off') => ((config as { SUPER_ADMIN_MFA: string }).SUPER_ADMIN_MFA = m);
+
+  it('a Super Admin who already set up an authenticator signs in with the password only', async () => {
+    setMode('required');
+    try {
+      const admin = await member('enrolled-then-off@hard.edu', 'super_admin');
+      const setup = await as(admin.token).post('/me/mfa/setup', { password: PASSWORD });
+      const s = base32Decode(setup.body.data.secret);
+      expect((await as(admin.token).post('/me/mfa/enable', { code: totp(s) })).status).toBe(200);
+    } finally {
+      setMode('off');
+    }
+    const fresh = await signIn('enrolled-then-off@hard.edu');
+    expect((await as(fresh).get('/admin/dashboard')).status).toBe(200);
+    const me = await as(fresh).get('/me');
+    expect(me.body.data.mfa).toMatchObject({ required: false, enrolled: true, verified: true });
+  });
+});

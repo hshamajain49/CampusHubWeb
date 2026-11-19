@@ -26,9 +26,9 @@ Neon has exactly two branches: `production`, and `dev` (seeded demo data). Don't
   `neon env pull --branch production`.
 - **Integrations:** `BREVO_API_KEY`, `EMAIL_FROM_ADDRESS`, `ABLY_API_KEY`, `VAPID_*`.
 - **Monitoring:** `SENTINEL_URL`, `SENTINEL_INGEST_KEY_ID`, `SENTINEL_INGEST_SECRET`. Set all three or none.
-- **Hardening, already set in `render.yaml`:** `SUPER_ADMIN_SESSION_HOURS`. `SUPER_ADMIN_MFA` is `required` by
-  default and `off` is refused. Leave `ALLOW_DEMO_DATA` unset: the API refuses to start on a database holding the
-  seeded demo accounts.
+- **Hardening, already set in `render.yaml`:** `SUPER_ADMIN_SESSION_HOURS`. `SUPER_ADMIN_MFA` is `off` for now:
+  Super Admins sign in with their password only; set it to `required` to turn two-step verification back on. Leave
+  `ALLOW_DEMO_DATA` unset: the API refuses to start on a database holding the seeded demo accounts.
 
 **Cloudflare Pages:**
 - `VITE_API_ORIGIN`: the API's URL.
@@ -101,7 +101,7 @@ To rotate the password, repeat steps 1–3. The API reconnects after Render rest
 
    Expect 0 failures.
 3. Sentinel's overview shows CampusHub's ingestion as current, within a minute of traffic.
-4. Sign in once as a member, and once as the Super Admin with your authenticator.
+4. Sign in once as a member, and once as the Super Admin.
 
 ## 7. Rolling back
 
@@ -117,12 +117,13 @@ To rotate the password, repeat steps 1–3. The API reconnects after Render rest
 - **First or extra Super Admin:**
   1. Run `neon env pull --branch production --file .env.production.local`.
   2. Run `npm run create-super-admin:prod -- --email <address> --name "<Full name>"`. It prints a one-time
-     password; at first sign-in the admin chooses a new one (12+ characters) and sets up an authenticator app.
+     password; at first sign-in the admin chooses a new one (12+ characters), and sets up an authenticator app if
+     `SUPER_ADMIN_MFA=required`.
      An existing account's email is promoted instead. Don't prefix the plain `create-super-admin` with
      `DATABASE_URL=`: `backend/.env` wins over shell variables, so it would write to the dev branch.
   3. Within 5 minutes Sentinel raises a privilege-change alert for the new Super Admin. That's expected:
      acknowledge it.
-- **Lost authenticator (Super Admin):** run `npm run reset-mfa:prod -- --email <address>`. It removes two-step
+- **Lost authenticator (Super Admin, only relevant with `SUPER_ADMIN_MFA=required`):** run `npm run reset-mfa:prod -- --email <address>`. It removes two-step
   verification and signs the account out everywhere; the admin sets up a new authenticator at the next sign-in.
 - **Locked out after failed sign-ins:** the lock lifts by itself (1 to 15 minutes), or immediately after a
   password reset.
@@ -146,6 +147,7 @@ To rotate the password, repeat steps 1–3. The API reconnects after Render rest
 | `403 ACCESS_BLOCKED` for some users | Their address is blocked in Sentinel | Lift the block in Sentinel (Suspicious IPs, then Blocks), and allowlist the network if it's the campus gateway |
 | Sign-ins answer "too many attempts" for everyone on one network | A campus NAT sharing one address, hitting the per-address limit | Check Sentinel for an attack first. If it's legitimate load, raise the limit in `lib/auth.ts` |
 | Sentinel shows ingestion as stale | The API is asleep (free plan, at night) or the ingestion secret is wrong | Expected at night; otherwise check the API logs for "Sentinel unreachable" |
+| CI's `deploy` job fails at "Migrate production"; `backup.yml` fails at "Dump and encrypt" | GitHub's `PROD_DATABASE_URL` is missing or wrong (it must be the owner role's **direct** string) | Fix the secret, then **Re-run failed jobs** on the CI run, and run `backup.yml` by hand to confirm |
 | The free instance stops responding near the end of the month | Render's free instance hours are used up (shared by every free service in the workspace) | See §11 |
 
 Sentinel being down never stops CampusHub: events wait in memory, and existing blocks expire on schedule.

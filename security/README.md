@@ -50,7 +50,7 @@ What it covers:
 - **Uploads:** SVG with a script, HTML disguised as an image, a decompression bomb, an oversized file, and an image
   with a PHP payload (it must be re-encoded); photo URLs must be signed.
 - **Rate limits** and `Retry-After`.
-- **Super Admin:** the admin area is closed until two-step verification is set up, a new session is held at the
+- **Super Admin** (two-step checks only when the target runs `SUPER_ADMIN_MFA=required`; otherwise they are skipped): the admin area is closed until two-step verification is set up, a new session is held at the
   second step, wrong codes lock it, and the API can't create or change a Super Admin.
 
 The authorization matrix, every route × every role, is an automated test:
